@@ -1,0 +1,73 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/actors",
+    "crates/models",
+    "crates/environments",
+    "crates/cli",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["mini-swe-agent contributors"]
+license = "MIT"
+
+[workspace.dependencies]
+# async runtime
+tokio = { version = "1", features = ["full"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+futures = "0.3"
+
+# actor framework
+ractor = "0.15"
+
+# serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+# rkyv 0.8: derive macros are built in, no feature flag needed
+# bytecheck enables runtime validation of archived bytes
+rkyv = { version = "0.8", features = ["bytecheck"] }
+
+# templating
+minijinja = { version = "2", features = ["loader"] }
+
+# error handling
+thiserror = "2"
+anyhow = "1"
+
+# id generation
+ulid = { version = "1", features = ["serde"] }
+
+# time
+chrono = { version = "0.4", features = ["serde"] }
+
+# logging / tracing
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# retry
+backon = "1"
+
+# http
+reqwest = { version = "0.12", features = ["json", "stream"] }
+
+# nushell (embedded)
+nu-engine   = "0.96"
+nu-protocol = "0.96"
+nu-command  = "0.96"
+nu-parser   = "0.96"
+
+# cli
+clap = { version = "4", features = ["derive", "env"] }
+
+# config
+dirs = "5"
+dotenv = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
