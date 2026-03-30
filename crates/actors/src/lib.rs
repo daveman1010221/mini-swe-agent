@@ -1,14 +1,18 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+//! `actors` — ractor-based actor system for mini-swe-agent.
+//!
+//! Actors:
+//!   ✅ `EventLoggerActor`  — subscribes to event bus, writes JSONL trajectory
+//!   ✅ `OrchestratorActor` — CapabilityMap, system prompt generation
+//!   ✅ `ToolRouterActor`   — dispatches ToolCall to appropriate handler
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod event_bus;
+pub mod event_logger;
+pub mod orchestrator;
+pub mod tool_router;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use event_bus::{new_event_bus, EventBus};
+pub use event_logger::{EventLoggerActor, EventLoggerArgs, EventLoggerMsg};
+pub use orchestrator::{
+    register_builtins, OrchestratorActor, OrchestratorArgs, OrchestratorMsg,
+};
+pub use tool_router::{RouteRequest, ToolRouterActor, ToolRouterArgs};

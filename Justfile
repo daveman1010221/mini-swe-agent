@@ -24,10 +24,12 @@ default:
 # Build all workspace crates (debug)
 build:
     cargo build --workspace
+    ln -sf /var/cache/cargo-target/ /workspace/target
 
 # Build all workspace crates (release)
 build-release:
     cargo build --workspace --release
+    ln -sf /var/cache/cargo-target/ /workspace/target
 
 # Build a specific crate
 # Usage: just build-crate mswea-core

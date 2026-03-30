@@ -46,7 +46,7 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # logging / tracing
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # retry
 backon = "1"
@@ -55,10 +55,11 @@ backon = "1"
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
 # nushell (embedded)
-nu-engine   = "0.96"
-nu-protocol = "0.96"
-nu-command  = "0.96"
-nu-parser   = "0.96"
+nu-engine   = "0.111"
+nu-protocol = "0.111"
+nu-parser   = "0.111"
+nu-cmd-lang = "0.111"
+nu-command  = "0.111"
 
 # cli
 clap = { version = "4", features = ["derive", "env"] }

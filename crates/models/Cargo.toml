@@ -1,8 +1,19 @@
 [package]
 name = "models"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+mswea-core = { path = "../core" }
+
+tokio.workspace = true
+tokio-stream.workspace = true
+futures.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+backon.workspace = true
+ulid.workspace = true

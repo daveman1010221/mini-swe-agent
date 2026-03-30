@@ -1,8 +1,23 @@
 [package]
 name = "environments"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+mswea-core = { path = "../core" }
+
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
+
+# nushell embedding
+nu-engine.workspace = true
+nu-parser.workspace = true
+nu-protocol.workspace = true
+nu-cmd-lang.workspace = true
+nu-command.workspace = true
+
+[dev-dependencies]
+tempfile = "3"

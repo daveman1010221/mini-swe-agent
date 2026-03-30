@@ -1,14 +1,15 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+//! `environments` — embedded nushell engine and file/search operations.
+//!
+//! Public surface:
+//!   - `ShellWorker`      — async handle to the stateful nu session thread
+//!   - `NushellSession`   — the session itself (sync, for direct use in tests)
+//!   - `file_ops`         — read, write, edit, search functions
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod file_ops;
+pub mod session;
+pub mod shell_worker;
+pub mod value_to_observation;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use file_ops::{edit_file, read_file, search, write_file};
+pub use session::NushellSession;
+pub use shell_worker::ShellWorker;

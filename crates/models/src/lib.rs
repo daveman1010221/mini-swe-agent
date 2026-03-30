@@ -1,14 +1,17 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+//! `models` — LLM client and actor for mini-swe-agent.
+//!
+//! Public surface:
+//!   - `LitellmClient`  — stateless OpenAI-compatible streaming client
+//!   - `ModelActor`     — retry-aware wrapper with event emission
+//!   - `ModelRequest`   — what the agent loop sends
+//!   - `ModelReply`     — what the actor returns
+//!   - `ModelResponse`  — the raw parsed response from the client
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub mod actor;
+pub mod client;
+pub mod extract;
+pub mod sse;
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
-}
+pub use actor::{EventSink, ModelActor, ModelReply, ModelRequest};
+pub use client::{ApiError, is_retryable, LitellmClient, ModelResponse};
+pub use extract::{extract_tool_call, ExtractionError};

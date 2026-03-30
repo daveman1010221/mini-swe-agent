@@ -1,8 +1,26 @@
 [package]
 name = "cli"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[[bin]]
+name = "mswea"
+path = "src/main.rs"
 
 [dependencies]
+mswea-core = { path = "../core" }
+models = { path = "../models" }
+environments = { path = "../environments" }
+actors = { path = "../actors" }
+
+tokio.workspace = true
+ractor.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+anyhow.workspace = true
+dirs.workspace = true
+dotenv.workspace = true

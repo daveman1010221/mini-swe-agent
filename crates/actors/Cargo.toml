@@ -1,8 +1,15 @@
 [package]
 name = "actors"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+version.workspace = true
+edition.workspace = true
 
 [dependencies]
+mswea-core = { path = "../core" }
+environments = { path = "../environments" }
+
+tokio.workspace = true
+ractor.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde_json.workspace = true
