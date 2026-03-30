@@ -7,9 +7,8 @@
 //! `ObservationArchive` is a rkyv-able mirror type used only for trajectory
 //! storage, since `nu_protocol::Value` does not implement `Archive`.
 
-use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use serde::{Deserialize, Serialize};
 
 /// A structured result returned by a tool actor to the agent.
 #[derive(Debug, Clone)]
@@ -21,15 +20,12 @@ pub enum Observation {
     },
     /// Result of `ToolCall::Read`.
     FileContent {
-        path: PathBuf,
+        path: String,
         content: String,
         size_bytes: usize,
     },
     /// Result of `ToolCall::Edit` or `ToolCall::Write`.
-    FileWritten {
-        path: PathBuf,
-        lines_changed: i64,
-    },
+    FileWritten { path: String, lines_changed: i64 },
     /// Result of `ToolCall::Search`.
     SearchResults {
         matches: Vec<SearchMatch>,
@@ -47,7 +43,7 @@ pub enum Observation {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct SearchMatch {
-    pub path: PathBuf,
+    pub path: String,
     pub line_number: u64,
     pub line: String,
     pub column: Option<u64>,
@@ -62,13 +58,20 @@ impl Observation {
                 "exit_code": exit_code,
                 "output": nu_value_to_json(value),
             }),
-            Self::FileContent { path, content, size_bytes } => serde_json::json!({
-                "path": path.display().to_string(),
+            Self::FileContent {
+                path,
+                content,
+                size_bytes,
+            } => serde_json::json!({
+                "path": path.to_string(),
                 "content": content,
                 "size_bytes": size_bytes,
             }),
-            Self::FileWritten { path, lines_changed } => serde_json::json!({
-                "path": path.display().to_string(),
+            Self::FileWritten {
+                path,
+                lines_changed,
+            } => serde_json::json!({
+                "path": path.to_string(),
                 "lines_changed": lines_changed,
                 "status": "ok",
             }),
@@ -76,12 +79,16 @@ impl Observation {
                 "query": query,
                 "match_count": matches.len(),
                 "matches": matches.iter().map(|m| serde_json::json!({
-                    "path": m.path.display().to_string(),
+                    "path": m.path.to_string(),
                     "line": m.line_number,
                     "content": m.line,
                 })).collect::<Vec<_>>(),
             }),
-            Self::Error { message, exit_code, tool_call_summary } => serde_json::json!({
+            Self::Error {
+                message,
+                exit_code,
+                tool_call_summary,
+            } => serde_json::json!({
                 "error": message,
                 "exit_code": exit_code,
                 "tool": tool_call_summary,
@@ -97,20 +104,31 @@ impl Observation {
                 value_json: nu_value_to_json(value).to_string(),
                 exit_code: *exit_code,
             },
-            Self::FileContent { path, content, size_bytes } => ObservationArchive::FileContent {
-                path: path.display().to_string(),
+            Self::FileContent {
+                path,
+                content,
+                size_bytes,
+            } => ObservationArchive::FileContent {
+                path: path.to_string(),
                 content: content.clone(),
                 size_bytes: *size_bytes,
             },
-            Self::FileWritten { path, lines_changed } => ObservationArchive::FileWritten {
-                path: path.display().to_string(),
+            Self::FileWritten {
+                path,
+                lines_changed,
+            } => ObservationArchive::FileWritten {
+                path: path.to_string(),
                 lines_changed: *lines_changed,
             },
             Self::SearchResults { matches, query } => ObservationArchive::SearchResults {
                 matches: matches.clone(),
                 query: query.clone(),
             },
-            Self::Error { message, exit_code, tool_call_summary } => ObservationArchive::Error {
+            Self::Error {
+                message,
+                exit_code,
+                tool_call_summary,
+            } => ObservationArchive::Error {
                 message: message.clone(),
                 exit_code: *exit_code,
                 tool_call_summary: tool_call_summary.clone(),
@@ -155,12 +173,12 @@ pub enum ObservationArchive {
 pub fn nu_value_to_json(val: &nu_protocol::Value) -> serde_json::Value {
     use nu_protocol::Value;
     match val {
-        Value::Int { val, .. }    => serde_json::json!(val),
-        Value::Float { val, .. }  => serde_json::json!(val),
+        Value::Int { val, .. } => serde_json::json!(val),
+        Value::Float { val, .. } => serde_json::json!(val),
         Value::String { val, .. } => serde_json::json!(val),
-        Value::Bool { val, .. }   => serde_json::json!(val),
-        Value::Nothing { .. }     => serde_json::Value::Null,
-        Value::List { vals, .. }  => {
+        Value::Bool { val, .. } => serde_json::json!(val),
+        Value::Nothing { .. } => serde_json::Value::Null,
+        Value::List { vals, .. } => {
             serde_json::Value::Array(vals.iter().map(nu_value_to_json).collect())
         }
         Value::Record { val, .. } => {
@@ -175,13 +193,13 @@ pub fn nu_value_to_json(val: &nu_protocol::Value) -> serde_json::Value {
         Value::Binary { val, .. } => {
             serde_json::json!({ "binary": format!("<{} bytes>", val.len()) })
         }
-        Value::Date { val, .. }       => serde_json::json!(val.to_rfc3339()),
-        Value::Duration { val, .. }   => serde_json::json!({ "duration_ns": val }),
-        Value::Filesize { val, .. }   => serde_json::json!({ "bytes": val }),
-        Value::Error { error, .. }    => serde_json::json!({ "error": error.to_string() }),
-        Value::CellPath { val, .. }   => serde_json::json!(val.to_string()),
-        Value::Custom { .. }          => serde_json::json!("<custom>"),
+        Value::Date { val, .. } => serde_json::json!(val.to_rfc3339()),
+        Value::Duration { val, .. } => serde_json::json!({ "duration_ns": val }),
+        Value::Filesize { val, .. } => serde_json::json!({ "bytes": val }),
+        Value::Error { error, .. } => serde_json::json!({ "error": error.to_string() }),
+        Value::CellPath { val, .. } => serde_json::json!(val.to_string()),
+        Value::Custom { .. } => serde_json::json!("<custom>"),
         // Catch-all: nushell's own display string
-        other => serde_json::json!(other.to_display_string()),
+        other => serde_json::json!(other),
     }
 }

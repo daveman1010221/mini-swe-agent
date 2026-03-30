@@ -5,7 +5,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 /// Full configuration for one agent run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +25,7 @@ pub struct AgentConfig {
     #[serde(default = "defaults::cost_limit")]
     pub cost_limit: f64,
     /// Path to save the rkyv trajectory archive.
-    pub output_path: Option<PathBuf>,
+    pub output_path: Option<String>,
     /// Path to the minijinja system prompt template.
     pub system_template: String,
     /// Path to the minijinja first-user-message template.
@@ -55,7 +54,7 @@ pub enum ModelBackend {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellConfig {
     #[serde(default = "defaults::cwd")]
-    pub cwd: PathBuf,
+    pub cwd: String,
     #[serde(default = "defaults::timeout")]
     pub timeout_secs: u64,
     #[serde(default)]
@@ -68,9 +67,16 @@ pub struct RunMeta {
 }
 
 mod defaults {
-    use std::path::PathBuf;
-    pub fn step_limit() -> u32 { 50 }
-    pub fn cost_limit() -> f64 { 3.0 }
-    pub fn cwd() -> PathBuf { std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/")) }
-    pub fn timeout() -> u64 { 30 }
+    pub fn step_limit() -> u32 {
+        50
+    }
+    pub fn cost_limit() -> f64 {
+        3.0
+    }
+    pub fn cwd() -> String {
+        String::from("/")
+    }
+    pub fn timeout() -> u64 {
+        30
+    }
 }

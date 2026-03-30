@@ -6,68 +6,64 @@
 //! `serde` handles the JSON boundary (LLM response → ToolCall).
 //! `rkyv` handles the storage boundary (ToolCall → trajectory on disk).
 
-use std::path::PathBuf;
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(
+    Debug, Clone, PartialEq, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize,
+)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolCall {
     /// Execute a nushell command. Result is a structured `nu_protocol::Value`.
-    Shell {
-        command: String,
-    },
+    Shell { command: String },
 
     /// Replace `old` with `new` in `path`. Fails if `old` is not found
     /// exactly once — no silent partial edits.
     Edit {
-        path: PathBuf,
+        path: String,
         old: String,
         new: String,
     },
 
     /// Write `content` to `path`, creating or overwriting.
-    Write {
-        path: PathBuf,
-        content: String,
-    },
+    Write { path: String, content: String },
 
     /// Read the full content of `path`.
-    Read {
-        path: PathBuf,
-    },
+    Read { path: String },
 
     /// Search for `query` in `path` (or working tree if None).
     Search {
         query: String,
-        path: Option<PathBuf>,
+        path: Option<String>,
         /// Treat `query` as a regex pattern.
         #[serde(default)]
         regex: bool,
     },
 
     /// Agent considers the task done. Triggers `AgentError::Submitted`.
-    Submit {
-        output: String,
-    },
+    Submit { output: String },
 }
 
 impl ToolCall {
     /// Short summary for logging and the live monitor display.
     pub fn summary(&self) -> String {
         match self {
-            Self::Shell { command }    => format!("shell: {}", truncate(command, 60)),
-            Self::Edit { path, .. }    => format!("edit: {}", path.display()),
-            Self::Write { path, .. }   => format!("write: {}", path.display()),
-            Self::Read { path }        => format!("read: {}", path.display()),
+            Self::Shell { command } => format!("shell: {}", truncate(command, 60)),
+            Self::Edit { path, .. } => format!("edit: {}", path),
+            Self::Write { path, .. } => format!("write: {}", path),
+            Self::Read { path } => format!("read: {}", path),
             Self::Search { query, .. } => format!("search: {}", truncate(query, 40)),
-            Self::Submit { .. }        => "submit".to_string(),
+            Self::Submit { .. } => "submit".to_string(),
         }
     }
 }
 
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    if s.len() <= max {
+        s
+    } else {
+        &s[..max]
+    }
 }
 
 #[cfg(test)]
@@ -76,7 +72,9 @@ mod tests {
 
     #[test]
     fn round_trip_shell() {
-        let call = ToolCall::Shell { command: "ls -la".into() };
+        let call = ToolCall::Shell {
+            command: "ls -la".into(),
+        };
         let json = serde_json::to_string(&call).unwrap();
         assert!(json.contains(r#""type":"shell""#));
         let back: ToolCall = serde_json::from_str(&json).unwrap();
@@ -86,7 +84,7 @@ mod tests {
     #[test]
     fn round_trip_edit() {
         let call = ToolCall::Edit {
-            path: PathBuf::from("src/main.rs"),
+            path: String::from("src/main.rs"),
             old: "foo".into(),
             new: "bar".into(),
         };

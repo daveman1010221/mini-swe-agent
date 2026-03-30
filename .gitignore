@@ -2,3 +2,5 @@
 **/*.rs.bk
 .env
 *.tar.gz
+result*
+.direnv/
