@@ -335,3 +335,27 @@ ci:
         -p 2222:2223 \
         localhost/mswea-dev-{{platform}}:latest \
         bash -c "cargo check --workspace && cargo test --workspace && cargo clippy --workspace -- -D warnings"
+
+# ── Dhall rendering ────────────────────────────────────────────────────────────
+#
+# container.dhall is the authoring format (typed, composable).
+# container.nix is the pre-rendered output that Nix imports at build time.
+#
+# The Nix sandbox has no network access, so dhall-to-nix cannot run inside
+# a nix build. We pre-render here and commit container.nix so the build works.
+#
+# Run this after every edit to src/flake/container.dhall.
+
+# Render src/flake/container.dhall → src/flake/container.nix
+render-container:
+    @echo "Rendering src/flake/container.dhall → src/flake/container.nix..."
+    @echo "(requires dhall-nix: nix shell nixpkgs#dhall-nix)"
+    dhall-to-nix < src/flake/container.dhall > src/flake/container.nix
+    @echo "Done. Commit src/flake/container.nix alongside src/flake/container.dhall."
+
+# Type-check the container config without rendering
+check-container-dhall:
+    @echo "Type-checking src/flake/container.dhall..."
+    dhall type < src/flake/container.dhall
+    @echo "OK."
+

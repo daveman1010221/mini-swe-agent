@@ -8,7 +8,7 @@
 -- Type reference:    dhall/types.dhall
 -- Defaults:          dhall/defaults.dhall
 
-let Lib      = PRELUDE_PATH
+let Lib = https://raw.githubusercontent.com/daveman1010221/nix-container-lib/bc1246f3372fbb825de2a85e6f3ca9d0779975d5/dhall/prelude.dhall
 let defaults = Lib.defaults
 
 let FailureMode = Lib.FailureMode

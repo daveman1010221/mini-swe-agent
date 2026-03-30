@@ -40,16 +40,16 @@
         inherit (pkgs) lib;
 
         # ── Dev container ──────────────────────────────────────────────────────
-        # inputs passed through so mkContainer can resolve flake packages
-        # (staticanalysis, dotacat) referenced by name in container.dhall.
+        # src/flake/container.nix is the pre-rendered output of
+        # src/flake/container.dhall. Regenerate it with:
+        #   just render-container
+        #
+        # inputs is still passed through so mkContainer can resolve flake
+        # packages (staticanalysis, dotacat, myNeovimOverlay) referenced
+        # by name in the rendered Nix attrset.
         container = nix-container-lib.lib.${system}.mkContainer {
           inherit system pkgs inputs;
-          configPath = pkgs.writeText "mswea-container.dhall" (
-            builtins.replaceStrings
-              [ "PRELUDE_PATH" ]
-              [ "${nix-container-lib}/dhall/prelude.dhall" ]
-              (builtins.readFile ./src/flake/container.dhall)
-          );
+          configNixPath = ./src/flake/container.nix;
         };
 
         # ── Rust toolchain ─────────────────────────────────────────────────────
@@ -68,7 +68,6 @@
           CARGO_BUILD_RUSTFLAGS = "-C linker=clang -C link-arg=-fuse-ld=lld";
         };
 
-        # Build workspace deps once and cache — speeds up subsequent builds.
         cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
         msweaPackages = craneLib.buildPackage (commonArgs // {
@@ -81,7 +80,6 @@
           devContainer = container.image;
         };
 
-        # Run via `nix flake check` and in CI
         checks = {
           mswea-clippy = craneLib.cargoClippy (commonArgs // {
             inherit cargoArtifacts;
@@ -97,7 +95,6 @@
           });
         };
 
-        # Host-side dev shell — `nix develop`
         devShells.default = container.devShell;
       }
     );
