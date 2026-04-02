@@ -12,3 +12,4 @@ pub use observation::Observation;
 pub use event::{Event, EventKind};
 pub use capability::{Capability, CommandCapability, CapabilityMap};
 pub use message::{Message, Role};
+pub use config::{RunConfig, TaskFile, CurrentTask, TaskRules};

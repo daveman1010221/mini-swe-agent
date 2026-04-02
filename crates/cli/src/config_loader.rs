@@ -73,6 +73,9 @@ fn apply_cli_overrides(mut cfg: RunConfig, args: &CliArgs) -> RunConfig {
     if let Some(task) = &args.task {
         cfg.run.task = Some(task.clone());
     }
+    if let Some(tf) = &args.task_file {
+        cfg.agent.task_file = Some(tf.clone());
+    }
     cfg
 }
 
@@ -100,6 +103,7 @@ fn default_run_config() -> RunConfig {
             output_path: None,
             system_template: "templates/system.j2".into(),
             instance_template: "templates/instance.j2".into(),
+            task_file: None,
         },
         model: ModelConfig {
             model_name: "claude-sonnet-4-5".into(),

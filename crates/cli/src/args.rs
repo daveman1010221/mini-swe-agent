@@ -18,7 +18,7 @@ use std::path::PathBuf;
 pub struct CliArgs {
     // ── Task ────────────────────────────────────────────────────────────────
 
-    /// Task description. Reads from stdin if omitted.
+    /// Task description. Reads from stdin if omitted and --task-file is not set.
     ///
     /// Can also be set via the MSWEA_TASK environment variable.
     #[arg(
@@ -29,6 +29,21 @@ pub struct CliArgs {
         help = "Task for the agent to solve"
     )]
     pub task: Option<String>,
+
+    /// Path to an agent-task.json file.
+    ///
+    /// When set, the agent reads `current_task` from the file as its mission
+    /// briefing. The task file's `rules`, `tools`, and active playbook are
+    /// injected into the system prompt via minijinja templates.
+    ///
+    /// Mutually exclusive with --task.
+    #[arg(
+        long,
+        value_name = "PATH",
+        env = "MSWEA_TASK_FILE",
+        help = "Path to agent-task.json mission briefing"
+    )]
+    pub task_file: Option<PathBuf>,
 
     // ── Config file ──────────────────────────────────────────────────────────
 

@@ -33,7 +33,11 @@ pub struct ActorSystem {
     pub event_logger: Option<ActorRef<actors::EventLoggerMsg>>,
 }
 
-pub async fn boot_actor_system(config: RunConfig) -> Result<ActorSystem> {
+pub async fn boot_actor_system(
+    config: RunConfig,
+    rules_section: String,
+    skills_section: String,
+) -> Result<ActorSystem> {
     info!("Booting actor system");
 
     // ── Event bus ────────────────────────────────────────────────────────────
@@ -68,6 +72,8 @@ pub async fn boot_actor_system(config: RunConfig) -> Result<ActorSystem> {
             event_bus: Arc::clone(&event_bus),
             system_prompt: Arc::clone(&system_prompt),
             cwd: config.shell.cwd.clone(),
+            rules_section,
+            skills_section,
         },
     )
     .await

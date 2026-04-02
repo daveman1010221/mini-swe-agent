@@ -13,3 +13,4 @@ ulid.workspace = true
 chrono.workspace = true
 tracing.workspace = true
 nu-protocol.workspace = true
+anyhow.workspace = true

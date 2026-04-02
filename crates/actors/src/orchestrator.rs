@@ -4,8 +4,18 @@
 //!
 //! - Receives `Capability` announcements (one per tool actor at boot)
 //! - Merges them into a `CapabilityMap`
-//! - Regenerates the system prompt and writes it to a shared `Arc<RwLock<String>>`
+//! - Renders the system prompt via minijinja templates
+//! - Writes the rendered prompt to a shared `Arc<RwLock<String>>`
 //! - Emits `CapabilityMapUpdated` and `SystemPromptRegenerated` events
+//!
+//! # Template Variables
+//!
+//! The system prompt template (`system.j2`) receives:
+//! - `tools_section`   — rendered from `CapabilityMap`
+//! - `cwd`             — working directory
+//! - `rules_section`   — from task file rules (never/always)
+//! - `ooda_section`    — OODA standing orders (always present)
+//! - `skills_section`  — stack knowledge injected at boot
 //!
 //! # Usage
 //!
@@ -14,19 +24,15 @@
 //! let (orch, _) = Actor::spawn(None, OrchestratorActor, OrchestratorArgs {
 //!     event_bus: bus.clone(),
 //!     system_prompt: Arc::clone(&prompt),
+//!     cwd: "/workspace".into(),
+//!     rules_section: String::new(),
+//!     skills_section: String::new(),
 //! }).await?;
-//!
-//! // Register builtin capabilities at boot:
-//! orch.cast(OrchestratorMsg::RegisterCapability(shell_capabilities("shell-actor")))?;
-//! orch.cast(OrchestratorMsg::RegisterCapability(file_capabilities("file-actor")))?;
-//! orch.cast(OrchestratorMsg::RegisterCapability(search_capabilities("search-actor")))?;
-//!
-//! // Agent loop reads prompt cheaply, no RPC needed:
-//! let prompt_text = prompt.read().unwrap().clone();
 //! ```
 
 use std::sync::{Arc, RwLock};
 
+use minijinja::{context, Environment};
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tracing::info;
 
@@ -54,6 +60,12 @@ pub struct OrchestratorArgs {
     pub system_prompt: Arc<RwLock<String>>,
     /// Working directory — included in the system prompt.
     pub cwd: String,
+    /// Rules section from agent-task.json (never/always rules).
+    /// Empty string if no task file is provided.
+    pub rules_section: String,
+    /// Stack knowledge injected into the prompt (rust-actor-tests, proptests, etc.)
+    /// Empty string if no skills are loaded.
+    pub skills_section: String,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -63,6 +75,9 @@ pub struct OrchestratorState {
     event_bus: EventBus,
     system_prompt: Arc<RwLock<String>>,
     cwd: String,
+    rules_section: String,
+    skills_section: String,
+    env: Environment<'static>,
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -80,11 +95,21 @@ impl Actor for OrchestratorActor {
         args: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
         info!("OrchestratorActor starting");
+
+        let mut env = Environment::new();
+        env.add_template_owned("system.j2", SYSTEM_TEMPLATE.to_string())
+            .map_err(|e| {
+                ActorProcessingErr::from(format!("Failed to load system template: {e}"))
+            })?;
+
         Ok(OrchestratorState {
             capability_map: CapabilityMap::default(),
             event_bus: args.event_bus,
             system_prompt: args.system_prompt,
             cwd: args.cwd,
+            rules_section: args.rules_section,
+            skills_section: args.skills_section,
+            env,
         })
     }
 
@@ -113,10 +138,15 @@ impl Actor for OrchestratorActor {
                     },
                 ));
 
-                // Regenerate and publish the system prompt.
-                let prompt = render_system_prompt(&state.capability_map, &state.cwd);
-                let prompt_len = prompt.len();
+                let prompt = render_system_prompt(
+                    &state.env,
+                    &state.capability_map,
+                    &state.cwd,
+                    &state.rules_section,
+                    &state.skills_section,
+                );
 
+                let prompt_len = prompt.len();
                 *state.system_prompt.write().unwrap() = prompt;
 
                 state.event_bus.send(Event::new(
@@ -133,14 +163,42 @@ impl Actor for OrchestratorActor {
 
 // ── System prompt rendering ───────────────────────────────────────────────────
 
-/// Build the full system prompt from the capability map.
-///
-/// Structure:
-///   1. Role and instructions
-///   2. Tool call format rules
-///   3. Generated tool descriptions from CapabilityMap
-///   4. Environment context
-fn render_system_prompt(map: &CapabilityMap, cwd: &str) -> String {
+/// The default system prompt template — embedded at compile time.
+const SYSTEM_TEMPLATE: &str = include_str!("templates/system.j2");
+
+fn render_system_prompt(
+    env: &Environment<'_>,
+    map: &CapabilityMap,
+    cwd: &str,
+    rules_section: &str,
+    skills_section: &str,
+) -> String {
+    let tools_section = map.render_system_prompt_section();
+
+    let tmpl = match env.get_template("system.j2") {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to get system template — using fallback");
+            return render_fallback(map, cwd);
+        }
+    };
+
+    match tmpl.render(context! {
+        tools_section => tools_section,
+        cwd => cwd,
+        rules_section => rules_section,
+        skills_section => skills_section,
+    }) {
+        Ok(rendered) => rendered,
+        Err(e) => {
+            tracing::error!(error = %e, "Failed to render system template — using fallback");
+            render_fallback(map, cwd)
+        }
+    }
+}
+
+/// Fallback prompt if minijinja rendering fails.
+fn render_fallback(map: &CapabilityMap, cwd: &str) -> String {
     let tools_section = map.render_system_prompt_section();
     format!(
         "You are an autonomous coding agent. \
@@ -166,9 +224,9 @@ fn render_system_prompt(map: &CapabilityMap, cwd: &str) -> String {
     )
 }
 
+// ── Builtin registration ──────────────────────────────────────────────────────
+
 /// Register all builtin tool capabilities with the orchestrator at boot.
-///
-/// Call this from `wiring.rs` after spawning the orchestrator.
 pub fn register_builtins(
     orch: &ActorRef<OrchestratorMsg>,
 ) -> Result<(), ractor::MessagingErr<OrchestratorMsg>> {
