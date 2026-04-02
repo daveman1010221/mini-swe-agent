@@ -1,32 +1,26 @@
 //! `ToolRouterActor` — receives `ToolCall` messages and dispatches to the
 //! appropriate handler, returning an `Observation`.
 //!
-//! # Design
-//!
-//! The agent loop sends a `RouteRequest` (containing a `ToolCall` and an
-//! `RpcReplyPort<Observation>`) to this actor. The actor pattern-matches on
-//! the `ToolCall` variant and dispatches:
-//!
-//!   - `Shell`  → `ShellWorker` (dedicated nu thread, async)
-//!   - `Read`   → `file_ops::read_file` (sync, cheap)
-//!   - `Write`  → `file_ops::write_file` (sync)
-//!   - `Edit`   → `file_ops::edit_file` (sync)
-//!   - `Search` → `file_ops::search` (spawns `rg` subprocess)
-//!   - `Submit` → immediate `Observation::Submitted`
-//!
-//! # Future
-//!
-//! When ShellActor, FileActor, and SearchActor become real ractor actors,
-//! replace the direct calls here with RPC calls to their `ActorRef`s.
-//! The agent loop and message types stay unchanged.
+//! Dispatch table:
+//!   - `Shell`       → `ShellWorker`
+//!   - `Read`        → `file_ops::read_file`
+//!   - `Write`       → `file_ops::write_file`
+//!   - `Edit`        → `file_ops::edit_file`
+//!   - `Search`      → `file_ops::search`
+//!   - `NushellTool` → look up script in `ToolRegistry`, exec via `ShellWorker`
+//!   - `Submit`      → immediate `Observation::Submitted`
+
+use std::sync::Arc;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
-use tracing::{debug, instrument};
+use tokio::sync::RwLock;
+use tracing::instrument;
 
 use environments::{edit_file, read_file, search, write_file, ShellWorker};
 use mswea_core::{
     event::{Event, EventKind},
     observation::Observation,
+    toolbox::ToolRegistry,
     ToolCall,
 };
 
@@ -34,15 +28,12 @@ use crate::event_bus::EventBus;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-/// Request sent by the agent loop to route a tool call.
 pub struct RouteRequest {
     pub call: ToolCall,
     pub step: u32,
     pub reply: RpcReplyPort<Observation>,
 }
 
-// ractor requires messages to be Debug — implement manually since
-// RpcReplyPort doesn't implement Debug.
 impl std::fmt::Debug for RouteRequest {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RouteRequest")
@@ -58,6 +49,8 @@ pub struct ToolRouterArgs {
     pub shell: ShellWorker,
     pub event_bus: EventBus,
     pub cwd: String,
+    /// Shared tool registry — updated by ToolboxActor.
+    pub tool_registry: Arc<RwLock<ToolRegistry>>,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -66,6 +59,7 @@ pub struct ToolRouterState {
     shell: ShellWorker,
     event_bus: EventBus,
     cwd: String,
+    tool_registry: Arc<RwLock<ToolRegistry>>,
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -87,6 +81,7 @@ impl Actor for ToolRouterActor {
             shell: args.shell,
             event_bus: args.event_bus,
             cwd: args.cwd,
+            tool_registry: args.tool_registry,
         })
     }
 
@@ -97,7 +92,6 @@ impl Actor for ToolRouterActor {
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         let obs = dispatch(&req.call, req.step, state).await;
-        // Reply to the caller — ignore error if they dropped the port.
         let _ = req.reply.send(obs);
         Ok(())
     }
@@ -117,7 +111,7 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
                 },
             ));
 
-            let obs = match state.shell.exec(command).await {
+            match state.shell.exec(command).await {
                 Ok(o) => {
                     if let Observation::Structured { exit_code, .. } = &o {
                         state.event_bus.send(Event::new(
@@ -145,8 +139,7 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
                         tool_call_summary: format!("shell: {}", truncate(command, 60)),
                     }
                 }
-            };
-            obs
+            }
         }
 
         ToolCall::Read { path } => {
@@ -155,10 +148,7 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
                     if let Observation::FileContent { size_bytes, .. } = &obs {
                         state.event_bus.send(Event::new(
                             "tool-router",
-                            EventKind::FileRead {
-                                path: path.clone(),
-                                size_bytes: *size_bytes,
-                            },
+                            EventKind::FileRead { path: path.clone(), size_bytes: *size_bytes },
                         ));
                     }
                     obs
@@ -177,10 +167,7 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
                     if let Observation::FileWritten { lines_changed, .. } = &obs {
                         state.event_bus.send(Event::new(
                             "tool-router",
-                            EventKind::FileWritten {
-                                path: path.clone(),
-                                lines_changed: *lines_changed,
-                            },
+                            EventKind::FileWritten { path: path.clone(), lines_changed: *lines_changed },
                         ));
                     }
                     obs
@@ -225,8 +212,116 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
             }
         }
 
+        ToolCall::NushellTool { namespace, tool, args } => {
+            let args_val: serde_json::Value = serde_json::from_str(args)
+                .unwrap_or_default();
+            dispatch_nushell_tool(namespace, tool, &args_val, state).await
+        }
+
         ToolCall::Submit { .. } => Observation::Submitted,
     }
+}
+
+// ── NushellTool dispatch ──────────────────────────────────────────────────────
+
+async fn dispatch_nushell_tool(
+    namespace: &str,
+    tool: &str,
+    args: &serde_json::Value,
+    state: &ToolRouterState,
+) -> Observation {
+    let full_name = format!("{namespace}/{tool}");
+
+    // Look up the script path from the tool registry
+    let script_path = {
+        let registry = state.tool_registry.read().await;
+        registry.get(&full_name).map(|e| e.script_path.clone())
+    };
+
+    let script_path = match script_path {
+        Some(p) => p,
+        None => {
+            return Observation::Error {
+                message: format!(
+                    "Unknown nushell tool: {full_name} — run tools/discovery/list.nu to see available tools"
+                ),
+                exit_code: Some(1),
+                tool_call_summary: full_name,
+            };
+        }
+    };
+
+    // Build the nushell command: nu <script_path> <flags from args>
+    let flags = args_to_flags(args);
+    let command = format!("nu {} {}", script_path.display(), flags);
+
+    tracing::info!(
+        tool = %full_name,
+        script = %script_path.display(),
+        "Dispatching nushell tool"
+    );
+
+    state.event_bus.send(Event::new(
+        "tool-router",
+        EventKind::ShellCommandStarted {
+            command: command.clone(),
+            cwd: state.cwd.clone(),
+        },
+    ));
+
+    match state.shell.exec(&command).await {
+        Ok(obs) => {
+            if let Observation::Structured { exit_code, .. } = &obs {
+                state.event_bus.send(Event::new(
+                    "tool-router",
+                    EventKind::ShellCommandCompleted {
+                        exit_code: *exit_code,
+                        duration_ms: 0,
+                        structured: true,
+                    },
+                ));
+            }
+            obs
+        }
+        Err(e) => {
+            state.event_bus.send(Event::new(
+                "tool-router",
+                EventKind::ShellCommandFailed {
+                    error: e.to_string(),
+                    exit_code: Some(1),
+                },
+            ));
+            Observation::Error {
+                message: e.to_string(),
+                exit_code: Some(1),
+                tool_call_summary: format!("{namespace}/{tool}"),
+            }
+        }
+    }
+}
+
+/// Convert a JSON args object into nushell flag syntax.
+/// `{"taskfile": "/foo", "window": 20}` → `--taskfile /foo --window 20`
+fn args_to_flags(args: &serde_json::Value) -> String {
+    let obj = match args.as_object() {
+        Some(o) => o,
+        None => return String::new(),
+    };
+
+    obj.iter()
+        .map(|(k, v)| {
+            let flag = k.replace('_', "-");
+            let val = match v {
+                serde_json::Value::String(s) => format!("'{s}'"),
+                serde_json::Value::Bool(b)   => b.to_string(),
+                serde_json::Value::Null      => return String::new(),
+                other                        => other.to_string(),
+            };
+            format!("--{flag} {val}")
+        })
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn truncate(s: &str, max: usize) -> &str {

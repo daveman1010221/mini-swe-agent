@@ -10,6 +10,7 @@ dependencies = [
  "environments",
  "minijinja",
  "mswea-core",
+ "nu-protocol",
  "ractor",
  "serde_json",
  "thiserror 2.0.18",

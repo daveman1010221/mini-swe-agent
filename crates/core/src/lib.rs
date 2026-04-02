@@ -5,6 +5,7 @@ pub mod event;
 pub mod capability;
 pub mod message;
 pub mod config;
+pub mod toolbox;
 
 pub use error::AgentError;
 pub use tool_call::ToolCall;
@@ -13,3 +14,4 @@ pub use event::{Event, EventKind};
 pub use capability::{Capability, CommandCapability, CapabilityMap};
 pub use message::{Message, Role};
 pub use config::{RunConfig, TaskFile, CurrentTask, TaskRules};
+pub use toolbox::{ToolRegistry, PlaybookRegistry, PreflightResult, ToolboxUpdate};

@@ -4,31 +4,11 @@
 //!
 //! - Receives `Capability` announcements (one per tool actor at boot)
 //! - Merges them into a `CapabilityMap`
+//! - Receives `UpdateToolbox` from `ToolboxActor` — updates tool registry,
+//!   playbook registry, skills, preflight result, and current step
 //! - Renders the system prompt via minijinja templates
 //! - Writes the rendered prompt to a shared `Arc<RwLock<String>>`
 //! - Emits `CapabilityMapUpdated` and `SystemPromptRegenerated` events
-//!
-//! # Template Variables
-//!
-//! The system prompt template (`system.j2`) receives:
-//! - `tools_section`   — rendered from `CapabilityMap`
-//! - `cwd`             — working directory
-//! - `rules_section`   — from task file rules (never/always)
-//! - `ooda_section`    — OODA standing orders (always present)
-//! - `skills_section`  — stack knowledge injected at boot
-//!
-//! # Usage
-//!
-//! ```rust
-//! let prompt = Arc::new(RwLock::new(String::new()));
-//! let (orch, _) = Actor::spawn(None, OrchestratorActor, OrchestratorArgs {
-//!     event_bus: bus.clone(),
-//!     system_prompt: Arc::clone(&prompt),
-//!     cwd: "/workspace".into(),
-//!     rules_section: String::new(),
-//!     skills_section: String::new(),
-//! }).await?;
-//! ```
 
 use std::sync::{Arc, RwLock};
 
@@ -39,6 +19,7 @@ use tracing::info;
 use mswea_core::{
     capability::{builtins, Capability, CapabilityMap},
     event::{Event, EventKind},
+    toolbox::{PlaybookStep, PreflightResult, ToolboxUpdate},
 };
 
 use crate::event_bus::EventBus;
@@ -49,22 +30,19 @@ use crate::event_bus::EventBus;
 pub enum OrchestratorMsg {
     /// A tool actor is announcing its capabilities.
     RegisterCapability(Capability),
+    /// ToolboxActor is pushing updated toolbox state.
+    UpdateToolbox(ToolboxUpdate),
 }
 
 // ── Arguments ─────────────────────────────────────────────────────────────────
 
 pub struct OrchestratorArgs {
     pub event_bus: EventBus,
-    /// Shared prompt string written here on every capability map update.
-    /// The agent loop reads this directly — no RPC needed.
     pub system_prompt: Arc<RwLock<String>>,
-    /// Working directory — included in the system prompt.
     pub cwd: String,
     /// Rules section from agent-task.json (never/always rules).
-    /// Empty string if no task file is provided.
     pub rules_section: String,
-    /// Stack knowledge injected into the prompt (rust-actor-tests, proptests, etc.)
-    /// Empty string if no skills are loaded.
+    /// Stack knowledge — overridden by ToolboxActor on first UpdateToolbox.
     pub skills_section: String,
 }
 
@@ -77,6 +55,10 @@ pub struct OrchestratorState {
     cwd: String,
     rules_section: String,
     skills_section: String,
+    /// Toolbox prompt section — rendered from ToolRegistry.
+    toolbox_section: String,
+    /// OODA context — rendered from PreflightResult + current PlaybookStep.
+    ooda_section: String,
     env: Environment<'static>,
 }
 
@@ -109,6 +91,8 @@ impl Actor for OrchestratorActor {
             cwd: args.cwd,
             rules_section: args.rules_section,
             skills_section: args.skills_section,
+            toolbox_section: String::new(),
+            ooda_section: String::new(),
             env,
         })
     }
@@ -134,36 +118,112 @@ impl Actor for OrchestratorActor {
                     "orchestrator",
                     EventKind::CapabilityMapUpdated {
                         total_commands: state.capability_map.total_commands(),
-                        actor_count: state.capability_map.actor_count(),
+                        actor_count:    state.capability_map.actor_count(),
                     },
                 ));
 
-                let prompt = render_system_prompt(
-                    &state.env,
-                    &state.capability_map,
-                    &state.cwd,
-                    &state.rules_section,
-                    &state.skills_section,
+                regenerate_prompt(state);
+            }
+
+            OrchestratorMsg::UpdateToolbox(update) => {
+                info!(
+                    tools     = update.tool_registry.count(),
+                    playbooks = update.playbook_registry.count(),
+                    has_preflight = update.preflight.is_some(),
+                    "OrchestratorActor: toolbox updated"
                 );
 
-                let prompt_len = prompt.len();
-                *state.system_prompt.write().unwrap() = prompt;
+                // Update skills from ToolboxActor (authoritative source)
+                state.skills_section = update.skills;
 
-                state.event_bus.send(Event::new(
-                    "orchestrator",
-                    EventKind::SystemPromptRegenerated { prompt_len },
-                ));
+                // Render toolbox section from tool registry
+                state.toolbox_section = update.tool_registry.render_prompt_section();
 
-                info!(prompt_len, "System prompt regenerated");
+                // Render OODA section from preflight + current step
+                state.ooda_section = render_ooda_section(
+                    update.preflight.as_ref(),
+                    update.current_step.as_ref(),
+                );
+
+                regenerate_prompt(state);
             }
         }
         Ok(())
     }
 }
 
+// ── Prompt regeneration ───────────────────────────────────────────────────────
+
+fn regenerate_prompt(state: &mut OrchestratorState) {
+    let prompt = render_system_prompt(
+        &state.env,
+        &state.capability_map,
+        &state.cwd,
+        &state.rules_section,
+        &state.skills_section,
+        &state.toolbox_section,
+        &state.ooda_section,
+    );
+
+    let prompt_len = prompt.len();
+    *state.system_prompt.write().unwrap() = prompt;
+
+    state.event_bus.send(Event::new(
+        "orchestrator",
+        EventKind::SystemPromptRegenerated { prompt_len },
+    ));
+
+    info!(prompt_len, "System prompt regenerated");
+}
+
+// ── OODA section rendering ────────────────────────────────────────────────────
+
+fn render_ooda_section(
+    preflight: Option<&PreflightResult>,
+    step: Option<&PlaybookStep>,
+) -> String {
+    match (preflight, step) {
+        (Some(pf), Some(s)) => {
+            // Collect names of automated steps completed
+            let automated: Vec<String> = vec!["survey".to_string()]; // survey is always automated
+
+            pf.render_ooda_section(
+                "write-tests", // TODO: pass task_type through
+                &s.name,
+                s.index,
+                6, // TODO: pass total_steps through
+                &s.orient_questions,
+                &s.approved_tools,
+                &automated,
+            )
+        }
+        (None, Some(s)) => {
+            // No preflight yet but we have a step — render basic OODA guidance
+            let mut out = String::new();
+            out.push_str(&format!("## Current Step: {}\n\n", s.name));
+            if !s.orient_questions.is_empty() {
+                out.push_str("**Orient questions:**\n");
+                for q in &s.orient_questions {
+                    out.push_str(&format!("- {q}\n"));
+                }
+                out.push('\n');
+            }
+            if !s.approved_tools.is_empty() {
+                out.push_str("**Approved tools:** ");
+                out.push_str(&s.approved_tools.join(", "));
+                out.push('\n');
+            }
+            out
+        }
+        _ => {
+            // No task loaded — render the base OODA standing orders
+            String::new()
+        }
+    }
+}
+
 // ── System prompt rendering ───────────────────────────────────────────────────
 
-/// The default system prompt template — embedded at compile time.
 const SYSTEM_TEMPLATE: &str = include_str!("templates/system.j2");
 
 fn render_system_prompt(
@@ -172,6 +232,8 @@ fn render_system_prompt(
     cwd: &str,
     rules_section: &str,
     skills_section: &str,
+    toolbox_section: &str,
+    ooda_section: &str,
 ) -> String {
     let tools_section = map.render_system_prompt_section();
 
@@ -184,10 +246,12 @@ fn render_system_prompt(
     };
 
     match tmpl.render(context! {
-        tools_section => tools_section,
-        cwd => cwd,
-        rules_section => rules_section,
-        skills_section => skills_section,
+        tools_section    => tools_section,
+        toolbox_section  => toolbox_section,
+        cwd              => cwd,
+        rules_section    => rules_section,
+        skills_section   => skills_section,
+        ooda_section     => ooda_section,
     }) {
         Ok(rendered) => rendered,
         Err(e) => {
@@ -197,36 +261,22 @@ fn render_system_prompt(
     }
 }
 
-/// Fallback prompt if minijinja rendering fails.
 fn render_fallback(map: &CapabilityMap, cwd: &str) -> String {
     let tools_section = map.render_system_prompt_section();
     format!(
         "You are an autonomous coding agent. \
-        On every turn you must respond with exactly one JSON tool call and nothing else — \
-        no explanations, no markdown, no extra text. \
-        The JSON must be a single object on one line.\n\
-        \n\
-        Tool calls use this structure: {{\"type\": \"<tool>\", <args>}}\n\
+        On every turn you must respond with exactly one JSON tool call and nothing else.\n\
         \n\
         {tools_section}\
         \n\
-        Environment:\n\
-        - Shell: nushell 0.111 (NOT bash — use nu syntax)\n\
-        - Working directory: {cwd}\n\
-        - ls returns structured records; use `ls /path | get name` to list filenames\n\
-        - Avoid POSIX flags like -1, -la; use nu flags or pipelines\n\
-        - Once you have the information needed, call submit immediately\n\
-        - Do not keep looping after the task is done\n\
-        \n\
-        IMPORTANT: The submit tool requires exactly this field name:\n\
-        {{\"type\":\"submit\",\"output\":\"your answer here\"}}\n\
-        The field is \"output\", not \"result\" or \"answer\".\n"
+        Working directory: {cwd}\n\
+        Shell: nushell 0.111\n\
+        Submit: {{\"type\":\"submit\",\"output\":\"your answer\"}}\n"
     )
 }
 
 // ── Builtin registration ──────────────────────────────────────────────────────
 
-/// Register all builtin tool capabilities with the orchestrator at boot.
 pub fn register_builtins(
     orch: &ActorRef<OrchestratorMsg>,
 ) -> Result<(), ractor::MessagingErr<OrchestratorMsg>> {

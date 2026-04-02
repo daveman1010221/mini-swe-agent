@@ -110,7 +110,15 @@ async fn run(args: CliArgs) -> Result<ExitStatus> {
     let cost_limit = config.agent.cost_limit;
     let model_name = config.model.model_name.clone();
 
-    let system = boot_actor_system(config, rules_section, skills_section).await?;
+    let mswea_root = std::env::current_dir().unwrap_or_default();
+    let system = boot_actor_system(
+        config,
+        rules_section,
+        skills_section,
+        current_task.clone(),
+        mswea_root,
+    ).await?;
+
     let bus = Arc::clone(&system.event_bus);
 
     emit(&bus, EventKind::AgentStarted { task: task.clone(), model: model_name });
