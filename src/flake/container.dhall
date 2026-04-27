@@ -38,8 +38,8 @@ in defaults.devContainer //
       })
 
   , packageLayers =
-      [ Lib.PackageLayer.Core
-      , Lib.PackageLayer.CI
+      [ Lib.PackageLayer.Micro
+      , Lib.PackageLayer.Core
       , Lib.PackageLayer.InteractiveDev
       , Lib.PackageLayer.RustToolchain
       , msweaExtras

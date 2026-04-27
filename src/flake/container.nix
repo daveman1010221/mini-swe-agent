@@ -23,9 +23,9 @@
   };
   packageLayers = [
     (u:
-      u.Core)
+      u.Micro)
     (u:
-      u.CI)
+      u.Core)
     (u:
       u.InteractiveDev)
     (u:
