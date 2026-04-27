@@ -27,11 +27,9 @@
     (u:
       u.CI)
     (u:
-      u.Dev)
+      u.InteractiveDev)
     (u:
-      u.Toolchain)
-    (u:
-      u.Pipeline)
+      u.RustToolchain)
     (u:
       u.Custom {
         name = "mswea-extras";
@@ -45,82 +43,14 @@
         ];
       })
   ];
-  pipeline = {
-    artifactDir = "/workspace/pipeline-out";
-    name = "mswea-ci";
-    outputs = null;
-    stages = [
-      {
-        command = "cargo fmt --check --all";
-        condition = null;
-        failureMode = u:
-          u.Collect;
-        impurityReason = null;
-        inputs = [ (u: u.Workspace) ];
-        name = "fmt";
-        outputs = [
-          (u:
-            u.Assertion {
-              description = "Source passes rustfmt";
-              name = "formatted";
-            })
-        ];
-        pure = true;
-      }
-      {
-        command = "cargo clippy --workspace -- -D warnings";
-        condition = null;
-        failureMode = u:
-          u.Collect;
-        impurityReason = null;
-        inputs = [ (u: u.Workspace) (u: u.Toolchain) ];
-        name = "clippy";
-        outputs = [
-          (u:
-            u.Assertion {
-              description = "No clippy warnings";
-              name = "lint-clean";
-            })
-        ];
-        pure = true;
-      }
-      {
-        command = "run-analysis --config ./analysis.toml";
-        condition = null;
-        failureMode = u:
-          u.Collect;
-        impurityReason = null;
-        inputs = [ (u: u.Workspace) ];
-        name = "static-analysis";
-        outputs = [ (u: u.Report { name = "static-analysis-report"; }) ];
-        pure = true;
-      }
-      {
-        command = "cargo test --workspace";
-        condition = "CI_FULL";
-        failureMode = u:
-          u.FailFast;
-        impurityReason = "Cannot guarantee CI_FULL is set";
-        inputs = [ (u: u.Workspace) (u: u.Toolchain) ];
-        name = "test";
-        outputs = [
-          (u:
-            u.Assertion {
-              description = "All workspace tests pass";
-              name = "tests-pass";
-            })
-        ];
-        pure = false;
-      }
-    ];
-    workingDir = "/workspace";
-  };
-  shell = {
-    colorScheme = "gruvbox";
-    plugins = [];
-    shell = "/bin/nu";
-    viBindings = true;
-  };
+  pipeline = null;
+  shell = u:
+    u.Interactive {
+      colorScheme = "gruvbox";
+      plugins = [];
+      shell = "/bin/nu";
+      viBindings = true;
+    };
   ssh = { enable = true; port = 2223; };
   staticGid = null;
   staticUid = null;

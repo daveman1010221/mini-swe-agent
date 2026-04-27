@@ -8,82 +8,11 @@
 -- Type reference:    dhall/types.dhall
 -- Defaults:          dhall/defaults.dhall
 
-let Lib = https://raw.githubusercontent.com/daveman1010221/nix-container-lib/bc1246f3372fbb825de2a85e6f3ca9d0779975d5/dhall/prelude.dhall
+let Lib = https://raw.githubusercontent.com/daveman1010221/nix-container-lib/e2334448bd4bb6348a467244d474f907d3d0e36d/dhall/prelude.dhall
 let defaults = Lib.defaults
-
-let FailureMode = Lib.FailureMode
-let Input       = Lib.StageInput
-let Output      = Lib.StageOutput
-
--- PipelineOutputArtifact and PipelineOutputAssertion are not re-exported
--- from prelude.dhall, so we spell out the None type inline.
-let NoPipelineOutputs =
-      None { artifacts : List { name             : Text
-                               , fromStage        : Text
-                               , artifact         : Text
-                               , attestation      : Optional Text
-                               , verifyMethod     : Optional Text
-                               }
-           , assertions : List { name : Text, fromStage : Text }
-           }
-
--- ---------------------------------------------------------------------------
--- Pipeline
---
--- fmt and clippy run unconditionally and collect all findings before
--- reporting. Static analysis also collects. The test stage is gated on
--- CI_FULL so developers don't pay for it on every save, but CI always
--- sets that var.
--- ---------------------------------------------------------------------------
-let msweaPipeline : Lib.PipelineConfig =
-  { name        = "mswea-ci"
-  , artifactDir = "/workspace/pipeline-out"
-  , workingDir  = "/workspace"
-  , outputs     = NoPipelineOutputs
-  , stages      =
-      [ { name           = "fmt"
-        , command        = "cargo fmt --check --all"
-        , failureMode    = FailureMode.Collect
-        , inputs         = [ Input.Workspace ]
-        , outputs        = [ Output.Assertion { name = "formatted", description = Some "Source passes rustfmt" } ]
-        , condition      = None Text
-        , pure           = True
-        , impurityReason = None Text
-        }
-      , { name           = "clippy"
-        , command        = "cargo clippy --workspace -- -D warnings"
-        , failureMode    = FailureMode.Collect
-        , inputs         = [ Input.Workspace, Input.Toolchain ]
-        , outputs        = [ Output.Assertion { name = "lint-clean", description = Some "No clippy warnings" } ]
-        , condition      = None Text
-        , pure           = True
-        , impurityReason = None Text
-        }
-      , { name           = "static-analysis"
-        , command        = "run-analysis --config ./analysis.toml"
-        , failureMode    = FailureMode.Collect
-        , inputs         = [ Input.Workspace ]
-        , outputs        = [ Output.Report { name = Some "static-analysis-report" } ]
-        , condition      = None Text
-        , pure           = True
-        , impurityReason = None Text
-        }
-      , { name           = "test"
-        , command        = "cargo test --workspace"
-        , failureMode    = FailureMode.FailFast
-        , inputs         = [ Input.Workspace, Input.Toolchain ]
-        , outputs        = [ Output.Assertion { name = "tests-pass", description = Some "All workspace tests pass" } ]
-        , condition      = Some "CI_FULL"
-        , pure           = False
-        , impurityReason = Some "Cannot guarantee CI_FULL is set"
-        }
-      ]
-  }
 
 -- ---------------------------------------------------------------------------
 -- Extra packages from flake inputs.
--- staticanalysis and dotacat come from named flake inputs.
--- nvim-pkg lands in pkgs via myNeovimOverlay so Lib.nixpkgs resolves it.
 -- ---------------------------------------------------------------------------
 let msweaExtras =
   Lib.customLayer "mswea-extras"
@@ -97,32 +26,26 @@ let msweaExtras =
 
 -- ---------------------------------------------------------------------------
 -- Container configuration.
---
--- Derived from defaults.devContainer with mswea-specific overrides:
--- - No TLS (no service layer requiring mTLS)
--- - SSH disabled, port 2223 reserved (matches run-dev-container in Justfile)
--- - Pipeline defined above
 -- ---------------------------------------------------------------------------
 in defaults.devContainer //
   { name = "mswea-dev"
 
-  , shell = Some
+  , shell = Some (Lib.Shell.Interactive
       { shell       = "/bin/nu"
       , colorScheme = "gruvbox"
       , viBindings  = True
       , plugins     = [] : List Text
-      }
+      })
 
   , packageLayers =
       [ Lib.PackageLayer.Core
       , Lib.PackageLayer.CI
-      , Lib.PackageLayer.Dev
-      , Lib.PackageLayer.Toolchain
-      , Lib.PackageLayer.Pipeline
+      , Lib.PackageLayer.InteractiveDev
+      , Lib.PackageLayer.RustToolchain
       , msweaExtras
       ]
 
-  , pipeline = Some msweaPipeline
+  , pipeline = None Lib.PipelineConfig
 
   , tls = None Lib.TLSConfig
 
