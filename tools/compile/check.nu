@@ -35,6 +35,11 @@ def main [
         }
     )
 
+    # cargo itself failed (e.g. unknown package) — surface the error
+    if $result.exit_code == 101 {
+        return { ok: false, data: null, error: $"cargo check failed: ($result.stderr | str trim)" }
+    }
+
     let output_lines = ($result.stdout | lines | where ($it | str length) > 0)
 
     # Parse JSON messages from cargo

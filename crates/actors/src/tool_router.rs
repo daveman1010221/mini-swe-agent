@@ -232,28 +232,74 @@ async fn dispatch_nushell_tool(
 ) -> Observation {
     let full_name = format!("{namespace}/{tool}");
 
-    // Look up the script path from the tool registry
-    let script_path = {
+    // Look up the script path and flags from the tool registry
+    let (script_path, tool_flags) = {
         let registry = state.tool_registry.read().await;
         tracing::debug!(count = registry.count(), "ToolRegistry lookup");
-        registry.get(&full_name).map(|e| e.script_path.clone())
-    };
-
-    let script_path = match script_path {
-        Some(p) => p,
-        None => {
-            return Observation::Error {
-                message: format!(
-                    "Unknown nushell tool: {full_name} — run tools/discovery/list.nu to see available tools"
-                ),
-                exit_code: Some(1),
-                tool_call_summary: full_name,
-            };
+        match registry.get(&full_name) {
+            Some(e) => (e.script_path.clone(), e.flags.clone()),
+            None => {
+                return Observation::Error {
+                    message: format!(
+                        "Unknown nushell tool: {full_name} — run tools/discovery/list.nu to see available tools"
+                    ),
+                    exit_code: Some(1),
+                    tool_call_summary: full_name,
+                };
+            }
         }
     };
 
+    // Validate args against known flags before invoking nushell
+    if let Some(obj) = args.as_object() {
+        for (key, val) in obj {
+            let flag_name = key.replace('_', "-");
+            match tool_flags.iter().find(|f| f.name == flag_name) {
+                Some(flag) if flag.flag_type == "bool" => {
+                    if let serde_json::Value::String(s) = val {
+                        if s != "true" && s != "false" {
+                            let usage = tool_flags.iter()
+                                .map(|f| f.render_signature())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            return Observation::Error {
+                                message: format!(
+                                    "Bad arg for {full_name}: --{flag_name} is a boolean switch, got string \"{s}\". Usage: {full_name} {usage}"
+                                ),
+                                exit_code: Some(1),
+                                tool_call_summary: full_name,
+                            };
+                        }
+                    }
+                }
+                None => {
+                    let usage = tool_flags.iter()
+                        .map(|f| f.render_signature())
+                        .collect::<Vec<_>>()
+                        .join(" ");
+                    return Observation::Error {
+                        message: format!(
+                            "Unknown flag --{flag_name} for {full_name}. Usage: {full_name} {usage}"
+                        ),
+                        exit_code: Some(1),
+                        tool_call_summary: full_name,
+                    };
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Build the nushell command: nu <script_path> <flags from args>
-    let flags = args_to_flags(args);
+    let mut flags = args_to_flags(args);
+
+    // Inject --taskfile for task/* tools if not already provided
+    if namespace == "task" && !flags.contains("--taskfile") {
+        if let Ok(tf) = std::env::var("TASKFILE") {
+            flags = format!("--taskfile {tf} {flags}").trim().to_string();
+        }
+    }
+
     let command = format!("nu {} {}", script_path.display(), flags);
 
     tracing::info!(

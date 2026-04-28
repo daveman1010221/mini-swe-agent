@@ -664,7 +664,7 @@ async fn run_preflight(
 
     // ── locate/files ──────────────────────────────────────────────────────────
     let files_cmd = format!(
-        "fd --type f --extension rs {crate_path} | lines | length"
+        "fd . {crate_path} --type f --extension rs | lines | length"
     );
     if let Ok(obs) = shell.exec(&files_cmd).await {
         if let mswea_core::observation::Observation::Structured { value, .. } = obs {

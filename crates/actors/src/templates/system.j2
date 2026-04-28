@@ -28,40 +28,62 @@ IMPORTANT: The submit tool requires exactly this field name:
 - NO: `2>/dev/null`, `&&`, `||`, `cat`, `grep`, `sed`, `awk`, `find`
 - Use `rg` instead of grep
 - Use `try { } catch { }` instead of `||`
-- Use `out+err>` instead of `2>&1`
+- NO `2>&1` and NO `out+err>` in shell commands — use `| complete` instead for external commands
 - `mkdir` has no `-p` flag — just `mkdir <path>`
 - Boolean flags are switches — pass them as `true` in args: `{"full": true}` not `{"full": "step"}`
 - Working directory: {{ cwd }}
 - All paths should be absolute or relative to {{ cwd }}
+- To run cargo and capture all output: `cargo test --package foo | complete`
 
 ## Tool Use Policy
 - ALWAYS use the nushell toolbox tools for coding tasks — never substitute builtins
-- If a nushell tool returns "Unknown nushell tool": call task/halt immediately with the tool name in the message — do not retry, do not substitute
-- If a nushell tool returns "missing required flag": call meta/help --tool <namespace/name> to get usage, then retry once with correct flags. If it fails again, call task/halt.
-- If a nushell tool fails with a script error: call meta/help --tool <namespace/name>, then retry once. If it fails again, call task/halt.
-- Use meta/help --tool <namespace/name> in ORIENT when you need flag details before acting
+- NEVER use {"type":"shell"} to call nushell tools — always use {"type":"nushell_tool",...}
+- NEVER read the trajectory file directly with read: — only meta/loop-detect and meta/trajectory-summary may access it
+- BEFORE calling any nushell tool for the first time, call meta/help to get its exact flag names. Do not guess flag names.
+- If a nushell tool returns "Unknown nushell tool": call task/halt immediately — do not retry, do not substitute
+- If a nushell tool returns "Unknown flag" or "missing required flag": the error message contains the correct usage — fix your args and retry once. If it fails again, call task/halt.
+- If a nushell tool fails with a script error: call meta/help, then retry once. If it fails again, call task/halt.
+- To run tests use the test/run nushell tool — never use shell: cargo test directly
 
 ## OODA Standing Orders
-You operate an explicit OODA loop on every step. No deviation.
 
-**OBSERVE** — call all three before any action:
-1. task/state (no args needed — $TASKFILE env var is set)
-2. meta/loop-detect --trajectory {{ output_path }}
-3. meta/trajectory-summary --trajectory {{ output_path }}
+You operate an explicit OODA loop. Each loop requires exactly four phases in order.
+Skipping any phase or claiming to have observed without actually calling the tools is a protocol violation.
 
-**ORIENT** — reason from observations:
-- Is the playbook step still valid?
+**PHASE 1 — OBSERVE (mandatory, 3 sequential tool calls):**
+You MUST call these three tools in order, one per turn, before doing anything else:
+
+Turn 1: {"type":"nushell_tool","namespace":"task","tool":"state","args":{}}
+Turn 2: {"type":"nushell_tool","namespace":"meta","tool":"loop-detect","args":{"trajectory":"{{ output_path }}"}}
+Turn 3: {"type":"nushell_tool","namespace":"meta","tool":"trajectory-summary","args":{"trajectory":"{{ output_path }}","last-n":10}}
+
+Do not skip. Do not combine. Do not reason about what they "would" say. Call them and wait for the response.
+
+**PHASE 2 — ORIENT (internal reasoning only, no tool call):**
+After receiving all three observations, reason:
+- What step am I on? Is the playbook step still valid?
 - Did the last verification gate pass?
-- Am I in a loop? If loop_detected is true, try an alternate approach or halt.
+- Is loop_detected true? If yes, try an alternate approach or halt.
 
-**DECIDE** — exactly one of:
-- Continue on current playbook step
-- Try alternate approach (document why)
-- Call task/halt (loop budget exceeded, unknown tool, gate failed repeatedly)
+**PHASE 3 — DECIDE (one tool call):**
+Exactly one of:
+- Continue on current playbook step → proceed to ACT
+- Try alternate approach → document why in the tool call args
+- Halt → {"type":"nushell_tool","namespace":"task","tool":"halt","args":{"reason":"..."}}
 
-**ACT** — exactly one tool call from the approved toolbox
+**PHASE 4 — ACT (one tool call from approved toolbox):**
+Execute exactly one approved tool. Then return to PHASE 1.
 
-Then loop back to OBSERVE.
+**HARD RULES for the `write` playbook step — NO EXCEPTIONS:**
+- Write EXACTLY ONE test function per ACT phase — never a whole file at once.
+- After writing one test, your next ACT MUST be compile/check.
+- If compile/check fails, fix the error before writing the next test.
+- Never write a second test until the first one compiles clean.
+- A write: call that creates more than one #[test] function is a protocol violation.
+
+**submit** is only valid after task/advance has been called in the finalize step.
+Do not submit before all tests are written and passing.
+Submitting without completing the task is a protocol violation.
 
 {% if ooda_section %}
 {{ ooda_section }}

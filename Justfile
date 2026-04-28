@@ -337,6 +337,17 @@ ci:
         localhost/mswea-dev-{{platform}}:latest \
         bash -c "cargo check --workspace && cargo test --workspace && cargo clippy --workspace -- -D warnings"
 
+# Clean agent run artifacts (trajectory files, agent-written test files)
+agent-clean:
+    rm -f /tmp/test-state-check.jsonl
+    rm -f /tmp/mswea-core-tests.jsonl
+    rm -f crates/core/tests/unit.rs
+    rm -f crates/core/tests/props.rs
+
+# Clean and run the agent
+agent-run: agent-clean build-release
+    /var/cache/cargo-target/release/mswea --task-file /workspace/agent-task.json --output /tmp/mswea-core-tests
+
 # ── Dhall rendering ────────────────────────────────────────────────────────────
 #
 # container.dhall is the authoring format (typed, composable).

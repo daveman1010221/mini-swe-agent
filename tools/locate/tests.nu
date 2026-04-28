@@ -85,7 +85,7 @@ def main [
         }
     )
 
-    let total_tests = ($test_files | each {|f| $f.test_count} | math sum | default 0)
+    let total_tests = (if ($test_files | is-empty) { 0 } else { $test_files | each {|f| $f.test_count} | math sum })
     let has_unit = ($test_files | any {|f| $f.file == "unit.rs"})
     let has_props = ($test_files | any {|f| $f.file == "props.rs"})
 

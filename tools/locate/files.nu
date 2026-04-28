@@ -33,7 +33,7 @@ def main [
     # Find files matching pattern
     let files = (
         try {
-            fd --type f $pattern $crate_path
+            fd --type f --glob $pattern $crate_path
             | lines
             | where ($it | str length) > 0
             | each {|f|
@@ -60,7 +60,7 @@ def main [
     {
         ok: true,
         data: {
-            crate_path: ($crate_path | str replace $env.HOME "~"),
+            crate_path: ($crate_path | str replace ($env.HOME? | default "") "~"),
             pattern: $pattern,
             count: ($files | length),
             files: $files,

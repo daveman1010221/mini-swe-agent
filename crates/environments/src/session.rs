@@ -115,6 +115,7 @@ impl NushellSession {
         for (k, v) in &self.env {
             std::env::set_var(k, v);
             self.stack.add_env_var(k.clone(), Value::string(v.clone(), Span::unknown()));
+            warn!(key = %k, value = %v, "Re-injecting env var after stack reset");
         }
     }
 
