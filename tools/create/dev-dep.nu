@@ -17,11 +17,9 @@ def main [
     if ($crate_path | is-empty) {
         return { ok: false, data: null, error: "missing required flag: --crate-path" }
     }
-
     if ($dep | is-empty) {
         return { ok: false, data: null, error: "missing required flag: --dep" }
     }
-
     if ($workspace_root | is-empty) {
         return { ok: false, data: null, error: "missing required flag: --workspace-root" }
     }
@@ -34,17 +32,9 @@ def main [
     }
 
     let content = (open --raw $cargo_toml_path)
+    let dep_snake = ($dep | str replace "-" "_")
 
     # Check if already declared
-    let dep_snake = ($dep | str replace "-" "_")
-    let already_exists = (
-        $content =~ $"\[dev-dependencies\][\\s\\S]*?($dep|$dep_snake)" or
-        $content =~ $"($dep|$dep_snake)[\\s\\S]*?\[dev-dependencies\]" |
-        # simpler: just check if dep name appears after [dev-dependencies]
-        false  # will verify below more carefully
-    )
-
-    # Better check: parse toml
     let toml = (open $cargo_toml_path)
     let dev_deps = ($toml | get "dev-dependencies"? | default {})
     let already_exists = ($dev_deps | columns | any {|c| $c == $dep or $c == $dep_snake})
@@ -73,11 +63,7 @@ def main [
         false
     }
 
-    let (form, entry) = if $workspace_available {
-        let e = $"\n($dep) = { workspace = true }"
-        ["workspace" $e]
-    } else {
-        # Can't add without knowing the version — surface this to agent
+    if not $workspace_available {
         return {
             ok: false,
             data: {
@@ -86,17 +72,20 @@ def main [
                 form: "unknown",
                 entry: "",
                 workspace_available: false,
-                message: $"($dep) is not in workspace Cargo.toml — add it there first with a version, then re-run this tool",
+                message: $"($dep) is not in workspace Cargo.toml - add it there first with a version, then re-run this tool",
             },
-            error: $"($dep) not found in workspace dependencies — add to workspace Cargo.toml first"
+            error: $"($dep) not found in workspace dependencies - add to workspace Cargo.toml first"
         }
     }
 
+    let form = "workspace"
+    let entry = $"\n($dep) = { workspace = true }"
+
     # Append to [dev-dependencies] section or add section
-    let has_dev_deps_section = ($content =~ "\[dev-dependencies\]")
+    let has_dev_deps_section = ($content =~ '\[dev-dependencies\]')
 
     let new_content = if $has_dev_deps_section {
-        $content | str replace "[dev-dependencies]" $"[dev-dependencies]\n($dep) = \{ workspace = true \}"
+        $content | str replace '[dev-dependencies]' $"[dev-dependencies]\n($dep) = \{ workspace = true \}"
     } else {
         $content + $"\n[dev-dependencies]\n($dep) = \{ workspace = true \}\n"
     }
@@ -115,7 +104,7 @@ def main [
             form: $form,
             entry: $entry,
             workspace_available: $workspace_available,
-            message: $"✓ Added ($dep) = \{ workspace = true \} to [dev-dependencies]",
+            message: $"Added ($dep) = { workspace = true } to [dev-dependencies]",
         },
         error: null
     }

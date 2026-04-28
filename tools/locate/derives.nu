@@ -25,7 +25,7 @@ def main [
     # Find all derive attributes
     let derive_lines = (
         try {
-            rg -n "#\[derive\(" $search_path --type rust
+            rg -n '#\[derive\(' $search_path --type rust
             | lines
             | where ($it | str length) > 0
         } catch {
@@ -62,7 +62,7 @@ def main [
         # Extract derive list
         let derives_str = (
             $line
-            | parse --regex "#\[derive\((?P<derives>[^)]+)\)"
+            | parse --regex '#\[derive\((?P<derives>[^)]+)\)'
             | get derives.0?
             | default ""
         )
@@ -87,7 +87,7 @@ def main [
     let all_derive_names = ($all_derives | each {|d| $d.derives} | flatten)
 
     let has_serde     = ($all_derive_names | any {|d| $d == "Serialize" or $d == "Deserialize"})
-    let has_rkyv      = ($all_derive_names | any {|d| $d == "Archive" or $d =~ "RkyvSerialize" or $d =~ "RkyvDeserialize"})
+    let has_rkyv      = ($all_derive_names | any {|d| $d == "Archive" or ($d =~ 'RkyvSerialize') or ($d =~ 'RkyvDeserialize')})
     let has_partial_eq = ($all_derive_names | any {|d| $d == "PartialEq"})
     let has_debug     = ($all_derive_names | any {|d| $d == "Debug"})
     let has_clone     = ($all_derive_names | any {|d| $d == "Clone"})

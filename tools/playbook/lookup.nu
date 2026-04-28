@@ -25,7 +25,7 @@ def main [
         try {
             ls $playbook_dir
             | where type == "file"
-            | where name =~ "\.nu$"
+            | where name =~ '\.nu$'
             | get name
             | each {|f| $f | path basename | str replace ".nu" ""}
         } catch { [] }

@@ -308,17 +308,27 @@ fn args_to_flags(args: &serde_json::Value) -> String {
         Some(o) => o,
         None => return String::new(),
     };
-
     obj.iter()
         .map(|(k, v)| {
             let flag = k.replace('_', "-");
             let val = match v {
-                serde_json::Value::String(s) => format!("'{s}'"),
-                serde_json::Value::Bool(b)   => b.to_string(),
-                serde_json::Value::Null      => return String::new(),
-                other                        => other.to_string(),
+                serde_json::Value::String(s) => {
+                    if s.contains(' ') {
+                        format!("'{s}'")
+                    } else {
+                        s.clone()
+                    }
+                }
+                serde_json::Value::Bool(b) if *b => format!("--{flag}"),
+                serde_json::Value::Bool(_)       => return String::new(),
+                serde_json::Value::Null          => return String::new(),
+                other                            => other.to_string(),
             };
-            format!("--{flag} {val}")
+            if val.starts_with("--") {
+                val
+            } else {
+                format!("--{flag} {val}")
+            }
         })
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()

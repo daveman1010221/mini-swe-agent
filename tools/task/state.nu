@@ -40,7 +40,7 @@ def main [
     # Parse the task file
     let tf = (
         try {
-            open $tf_path | from json
+            open --raw $tf_path | from json
         } catch {|err|
             return {
                 ok: false,

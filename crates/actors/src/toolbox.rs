@@ -235,6 +235,66 @@ impl ToolboxActor {
 
 // ── Tool scanning ─────────────────────────────────────────────────────────────
 
+/// Parse flags from a nushell script's `def main [...]` block.
+/// Extracts name, type, default value, and inline comment for each flag.
+fn parse_tool_flags(script_path: &std::path::Path) -> Vec<mswea_core::toolbox::ToolFlag> {
+    let content = match std::fs::read_to_string(script_path) {
+        Ok(c) => c,
+        Err(_) => return Vec::new(),
+    };
+
+    // Find the def main [...] block
+    let start = match content.find("def main [") {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    let rest = &content[start..];
+    let end = match rest.find("] {") {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    let block = &rest[..end];
+
+    let mut flags = Vec::new();
+
+    for line in block.lines() {
+        let trimmed = line.trim();
+        // Flag lines start with --
+        if !trimmed.starts_with("--") { continue; }
+
+        // Split off inline comment
+        let (flag_part, description) = match trimmed.split_once('#') {
+            Some((f, c)) => (f.trim(), c.trim().to_string()),
+            None         => (trimmed, String::new()),
+        };
+
+        // Parse: --flag-name: type = default
+        // or:    --flag-name: type,
+        let flag_part = flag_part.trim_end_matches(',').trim();
+
+        let (name_type, default) = match flag_part.split_once('=') {
+            Some((nt, d)) => (nt.trim(), Some(d.trim().trim_matches('"').to_string())),
+            None          => (flag_part, None),
+        };
+
+        let (raw_name, flag_type) = match name_type.split_once(':') {
+            Some((n, t)) => (n.trim(), t.trim().to_string()),
+            None         => (name_type, "string".to_string()),
+        };
+
+        let name = raw_name.trim_start_matches('-').to_string();
+
+        flags.push(mswea_core::toolbox::ToolFlag {
+            name,
+            flag_type,
+            default,
+            description,
+        });
+    }
+
+    flags
+}
+
 /// Scan `tools/*/` for namespace directories and parse tool entries.
 /// Each namespace dir that has an `interfaces.nu` is registered.
 /// Each `<tool>.nu` file (not interfaces.nu) is a tool implementation.
@@ -288,14 +348,17 @@ fn scan_tools(tools_dir: &Path) -> ToolRegistry {
             // Infer OODA phase from namespace
             let ooda_phase = infer_ooda_phase(&ns, &tool_name);
 
+            let flags = parse_tool_flags(&impl_path);
+
             let entry = ToolEntry {
                 full_name:   full_name.clone(),
                 namespace:   ns.clone(),
                 name:        tool_name,
                 script_path: impl_path,
-                description: String::new(), // TODO: parse from script header
+                description: String::new(),
                 ooda_phase,
                 tags:        vec![ns.clone()],
+                flags,
             };
 
             registry.tools.insert(full_name, entry);

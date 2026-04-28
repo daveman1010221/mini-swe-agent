@@ -42,7 +42,7 @@ def main [
 
     let events = (
         try {
-            open $trajectory
+            open --raw $trajectory
             | lines
             | where ($it | str length) > 0
             | each {|line| $line | from json}
@@ -107,8 +107,7 @@ def main [
         $events
         | where {|e|
             let kind = ($e | get kind.kind? | default "")
-            $kind == "shell_command_started" and
-            (($e | get kind.command? | default "") =~ "cargo check")
+            $kind == "shell_command_started" and (($e | get kind.command? | default "") =~ "cargo check")
         }
     )
     let compile_attempts = ($compile_events | length)
@@ -117,8 +116,7 @@ def main [
         $events
         | where {|e|
             let kind = ($e | get kind.kind? | default "")
-            $kind == "shell_command_completed" and
-            ($e | get kind.exit_code? | default 1) == 0
+            $kind == "shell_command_completed" and ($e | get kind.exit_code? | default 1) == 0
         }
         | length
     )
@@ -128,8 +126,7 @@ def main [
         $events
         | where {|e|
             let kind = ($e | get kind.kind? | default "")
-            $kind == "shell_command_started" and
-            (($e | get kind.command? | default "") =~ "cargo test")
+            $kind == "shell_command_started" and (($e | get kind.command? | default "") =~ "cargo test")
         }
     )
     let test_runs = ($test_events | length)

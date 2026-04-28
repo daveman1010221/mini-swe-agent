@@ -75,13 +75,16 @@ impl Actor for EventLoggerActor {
             Some(EventLoggerMsg::Log(event))
         });
 
-        let file = tokio::fs::OpenOptions::new()
+        let mut file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&args.output_path)
             .await
             .with_context(|| format!("Opening {}", args.output_path.display()))
             .map_err(|e| ActorProcessingErr::from(e.to_string()))?;
+
+        // Ensure clean separation from any previous run's content
+        file.write_all(b"\n").await.ok();
 
         Ok(EventLoggerState {
             writer: tokio::io::BufWriter::new(file),

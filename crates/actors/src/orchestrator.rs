@@ -40,9 +40,8 @@ pub struct OrchestratorArgs {
     pub event_bus: EventBus,
     pub system_prompt: Arc<RwLock<String>>,
     pub cwd: String,
-    /// Rules section from agent-task.json (never/always rules).
+    pub output_path: String,
     pub rules_section: String,
-    /// Stack knowledge — overridden by ToolboxActor on first UpdateToolbox.
     pub skills_section: String,
 }
 
@@ -53,11 +52,10 @@ pub struct OrchestratorState {
     event_bus: EventBus,
     system_prompt: Arc<RwLock<String>>,
     cwd: String,
+    output_path: String,
     rules_section: String,
     skills_section: String,
-    /// Toolbox prompt section — rendered from ToolRegistry.
     toolbox_section: String,
-    /// OODA context — rendered from PreflightResult + current PlaybookStep.
     ooda_section: String,
     env: Environment<'static>,
 }
@@ -89,6 +87,7 @@ impl Actor for OrchestratorActor {
             event_bus: args.event_bus,
             system_prompt: args.system_prompt,
             cwd: args.cwd,
+            output_path: args.output_path,
             rules_section: args.rules_section,
             skills_section: args.skills_section,
             toolbox_section: String::new(),
@@ -159,6 +158,7 @@ fn regenerate_prompt(state: &mut OrchestratorState) {
         &state.env,
         &state.capability_map,
         &state.cwd,
+        &state.output_path,
         &state.rules_section,
         &state.skills_section,
         &state.toolbox_section,
@@ -230,6 +230,7 @@ fn render_system_prompt(
     env: &Environment<'_>,
     map: &CapabilityMap,
     cwd: &str,
+    output_path: &str,
     rules_section: &str,
     skills_section: &str,
     toolbox_section: &str,
@@ -246,12 +247,13 @@ fn render_system_prompt(
     };
 
     match tmpl.render(context! {
-        tools_section    => tools_section,
-        toolbox_section  => toolbox_section,
-        cwd              => cwd,
-        rules_section    => rules_section,
-        skills_section   => skills_section,
-        ooda_section     => ooda_section,
+        tools_section   => tools_section,
+        toolbox_section => toolbox_section,
+        cwd             => cwd,
+        output_path     => output_path,
+        rules_section   => rules_section,
+        skills_section  => skills_section,
+        ooda_section    => ooda_section,
     }) {
         Ok(rendered) => rendered,
         Err(e) => {

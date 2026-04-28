@@ -26,7 +26,7 @@ def main [
     }
 
     let tf = (
-        try { open $tf_path | from json }
+        try { open --raw $tf_path | from json }
         catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
     )
 
@@ -39,23 +39,19 @@ def main [
         $current | get step? | default "unknown"
     }
 
-    # Step-specific verification logic
-    let (gate, passed, evidence, missing) = match $current_step {
+    # Step-specific verification logic — returns [gate, passed, evidence, missing]
+    let verify_result = match $current_step {
         "survey" => {
-            # Survey is automated — always passes if we have a current task
             let evidence = "Survey automated by ToolboxActor — preflight results available"
             ["compile/check passed and crate structure understood" true $evidence []]
         }
 
         "orient" => {
-            # Verify coverage plan exists and has planned tests
             let plan = ($current | get coverage_plan? | default null)
             let planned = if $plan != null { $plan | get planned_tests? | default [] } else { [] }
             let planned_count = ($planned | length)
-            let passed = $plan != null and $planned_count > 0
-            let evidence = if $passed {
-                $"Coverage plan written with ($planned_count) planned tests"
-            } else { "" }
+            let passed = ($plan != null) and ($planned_count > 0)
+            let evidence = if $passed { $"Coverage plan written with ($planned_count) planned tests" } else { "" }
             let missing = if not $passed {
                 if $plan == null { ["coverage_plan is null — call task/write-coverage-plan"] }
                 else { ["planned_tests is empty — coverage plan needs at least one test"] }
@@ -64,13 +60,12 @@ def main [
         }
 
         "scaffold" => {
-            # Verify tests/ dir and Cargo.toml entries exist
             let crate_path = ($current | get crate_path? | default "")
             let tests_dir  = ($crate_path | path join "tests")
             let has_tests_dir = if ($crate_path | str length) > 0 { $tests_dir | path exists } else { false }
             let cargo_toml = ($crate_path | path join "Cargo.toml")
             let has_test_entries = if ($cargo_toml | path exists) {
-                (open --raw $cargo_toml) =~ "\\[\\[test\\]\\]"
+                (open --raw $cargo_toml) =~ '\[\[test\]\]'
             } else { false }
             let passed = $has_tests_dir and $has_test_entries
             let evidence = if $passed { "tests/ directory exists and Cargo.toml has [[test]] entries" } else { "" }
@@ -82,7 +77,6 @@ def main [
         }
 
         "write" => {
-            # Verify planned tests exist in test files and compile
             let plan = ($current | get coverage_plan? | default null)
             let planned = if $plan != null { $plan | get planned_tests? | default [] } else { [] }
             let crate_path = ($current | get crate_path? | default "")
@@ -92,8 +86,18 @@ def main [
                 try {
                     ls $tests_dir
                     | where type == "file"
-                    | where name =~ "\.rs$"
-                    | each {|f| open $f.name | lines | where {|l| $l =~ "fn test_"} | each {|l| $l | str replace --regex ".*fn " "" | str replace --regex "\\(.*" "" | str trim}}
+                    | where name =~ '\.rs$'
+                    | each {|f|
+                        open $f.name
+                        | lines
+                        | where {|l| $l =~ 'fn test_'}
+                        | each {|l|
+                            $l
+                            | str replace --regex '.*fn ' ''
+                            | str replace --regex '\(.*' ''
+                            | str trim
+                        }
+                    }
                     | flatten
                 } catch { [] }
             } else { [] }
@@ -106,11 +110,10 @@ def main [
         }
 
         "verify" => {
-            # Check trajectory for successful test run
             let traj_path = if ($trajectory | str length) > 0 { $trajectory } else { "" }
-            let test_passed = if ($traj_path | str length) > 0 and ($traj_path | path exists) {
+            let test_passed = if (($traj_path | str length) > 0) and ($traj_path | path exists) {
                 try {
-                    open $traj_path
+                    open --raw $traj_path
                     | lines
                     | where ($it | str length) > 0
                     | each {|l| $l | from json}
@@ -126,15 +129,18 @@ def main [
         }
 
         "finalize" => {
-            # Check that fmt/apply and final compile passed
-            let passed = true  # finalize gates are lightweight — trust the agent's judgment
-            ["fmt/apply done, compile/check clean, task/advance called last" $passed "Finalize gates are verified by the agent at each sub-step" []]
+            ["fmt/apply done, compile/check clean, task/advance called last" true "Finalize gates are verified by the agent at each sub-step" []]
         }
 
         _ => {
             ["unknown step" false "" [$"Unknown step: ($current_step) — cannot verify"]]
         }
     }
+
+    let gate    = ($verify_result | get 0)
+    let passed  = ($verify_result | get 1)
+    let evidence = ($verify_result | get 2)
+    let missing = ($verify_result | get 3)
 
     {
         ok: true,
@@ -145,9 +151,9 @@ def main [
             evidence: $evidence,
             missing: $missing,
             message: (if $passed {
-                $"✓ Gate passed for step '($current_step)' — ready to advance"
+                $"Gate passed for step '($current_step)' — ready to advance"
             } else {
-                $"✗ Gate not yet passed for step '($current_step)'"
+                $"Gate not yet passed for step '($current_step)'"
             }),
         },
         error: null

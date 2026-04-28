@@ -26,7 +26,7 @@ def main [
     let size_bytes = ($file | path expand | ls $in | get size.0 | into int)
 
     let warning = if $line_count > 200 {
-        $"large file ($line_count lines) — consider extract/range or extract/symbol for specific sections"
+        $"large file - consider extract/range or extract/symbol for specific sections \(($line_count) lines\)"
     } else {
         null
     }

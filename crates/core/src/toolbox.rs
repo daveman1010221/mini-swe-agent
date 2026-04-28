@@ -11,6 +11,36 @@ use std::path::PathBuf;
 
 // ── Tool registry ─────────────────────────────────────────────────────────────
 
+// ── Tool registry ─────────────────────────────────────────────────────────────
+
+/// A single flag parsed from a nushell tool's `def main [...]` block.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolFlag {
+    /// Flag name as passed on CLI e.g. "crate-path"
+    pub name: String,
+    /// Nushell type annotation e.g. "path", "string", "int", "bool"
+    pub flag_type: String,
+    /// Default value if any — None means required
+    pub default: Option<String>,
+    /// Inline comment from the script e.g. "Path to the crate or directory"
+    pub description: String,
+}
+
+impl ToolFlag {
+    pub fn is_required(&self) -> bool {
+        self.default.is_none()
+    }
+
+    /// Render as a compact signature string e.g. "--crate-path: path" or "[--pattern: string = \"*.rs\"]"
+    pub fn render_signature(&self) -> String {
+        let base = format!("--{}: {}", self.name, self.flag_type);
+        match &self.default {
+            None    => base,
+            Some(d) => format!("[{base} = {d}]"),
+        }
+    }
+}
+
 /// A single registered nushell tool.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolEntry {
@@ -22,12 +52,14 @@ pub struct ToolEntry {
     pub name: String,
     /// Absolute path to the .nu implementation file
     pub script_path: PathBuf,
-    /// Human-readable description (parsed from interfaces.nu comment)
+    /// One-line description parsed from the script header comment
     pub description: String,
     /// Which OODA phase this tool belongs to
     pub ooda_phase: OodaPhase,
     /// Tags for fuzzy search
     pub tags: Vec<String>,
+    /// Flags parsed from `def main [...]`
+    pub flags: Vec<ToolFlag>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -87,7 +119,8 @@ impl ToolRegistry {
             return String::new();
         }
         let mut out = String::from("## Nushell Toolbox\n\n");
-        out.push_str("Call these as: {\"type\": \"nushell_tool\", \"namespace\": \"<ns>\", \"tool\": \"<name>\", \"args\": {...}}\n\n");
+        out.push_str("Call these as: {\"type\": \"nushell_tool\", \"namespace\": \"<ns>\", \"tool\": \"<name>\", \"args\": {...}}\n");
+        out.push_str("Use meta/help --tool <namespace/name> to get full usage docs for any tool.\n\n");
 
         let mut by_ns: HashMap<&str, Vec<&ToolEntry>> = HashMap::new();
         for entry in self.tools.values() {
@@ -102,11 +135,15 @@ impl ToolRegistry {
             let mut tools = by_ns[ns].clone();
             tools.sort_by_key(|t| &t.name);
             for tool in tools {
+                let flags = tool.flags
+                    .iter()
+                    .map(|f| f.render_signature())
+                    .collect::<Vec<_>>()
+                    .join(" ");
                 out.push_str(&format!(
-                    "- **{full}** [{phase}] — {desc}\n",
+                    "- **{full}** [{phase}] {flags}\n",
                     full  = tool.full_name,
                     phase = tool.ooda_phase,
-                    desc  = tool.description,
                 ));
             }
             out.push('\n');

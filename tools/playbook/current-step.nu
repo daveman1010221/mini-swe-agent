@@ -24,7 +24,7 @@ def main [
     }
 
     let tf = (
-        try { open $tf_path | from json }
+        try { open --raw $tf_path | from json }
         catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
     )
 
@@ -33,10 +33,10 @@ def main [
         return { ok: false, data: null, error: "no current task — call task/next first" }
     }
 
-    let step_name    = ($current | get step?          | default "unknown")
-    let step_index   = ($current | get step_index?    | default 0)
-    let step_attempts = ($current | get step_attempts? | default 0)
-    let task_type    = ($current | get op?            | default "write-tests")
+    let step_name     = ($current | get step?           | default "unknown")
+    let step_index    = ($current | get step_index?     | default 0)
+    let step_attempts = ($current | get step_attempts?  | default 0)
+    let task_type     = ($current | get op?             | default "write-tests")
 
     # Step definitions — mirrors playbook/lookup but returns just the current step
     let all_steps = match $task_type {
@@ -184,12 +184,11 @@ def main [
                     "task/advance LAST — not first",
                 ],
             }
-            _ => null
         }
         _ => null
     }
 
-    let step_data = if $all_steps != null { $all_steps | get $step_name? | default null } else { null }
+    let step_data = if $all_steps != null { $all_steps | get $step_name | default null } else { null }
 
     if $step_data == null {
         return {
@@ -199,7 +198,7 @@ def main [
         }
     }
 
-    let step_budget   = ($step_data | get budget? | default 3)
+    let step_budget      = ($step_data | get budget? | default 3)
     let budget_remaining = $step_budget - $step_attempts
 
     {
@@ -214,7 +213,7 @@ def main [
             verification_gate: ($step_data | get verification_gate),
             budget: $step_budget,
             budget_remaining: $budget_remaining,
-            budget_exhausted: $budget_remaining <= 0,
+            budget_exhausted: ($budget_remaining <= 0),
             orient_questions: ($step_data | get orient_questions),
             example_actions: ($step_data | get example_actions? | default []),
         },

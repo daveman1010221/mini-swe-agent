@@ -43,7 +43,7 @@ def main [
     let test_files = match $target {
         "unit"  => ([$tests_dir "unit.rs"  ] | path join | if ($in | path exists) { [$in] } else { [] }),
         "props" => ([$tests_dir "props.rs" ] | path join | if ($in | path exists) { [$in] } else { [] }),
-        _       => (ls $tests_dir | where type == "file" | where name =~ "\.rs$" | get name),
+        _       => (ls $tests_dir | where type == "file" | where name =~ '\.rs$' | get name),
     }
 
     let by_file = ($test_files | each {|file|
@@ -54,11 +54,9 @@ def main [
             $content
             | lines
             | where {|l|
-                ($l =~ "^(pub |async |pub async )?fn test_") or
-                ($l =~ "#\[test\]") or
-                ($l =~ "#\[tokio::test\]")
+                ($l =~ '^(pub |async |pub async )?fn test_') or ($l =~ '#\[test\]') or ($l =~ '#\[tokio::test\]')
             }
-            | where {|l| $l =~ "fn test_"}
+            | where {|l| $l =~ '^fn test_|fn test_'}
             | each {|l|
                 $l
                 | str replace --regex "^.*(fn test_)" "test_"

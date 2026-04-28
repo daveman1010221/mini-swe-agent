@@ -68,7 +68,7 @@ def main [
             $code
             | str replace --regex "^pub (async )?fn " ""
             | str replace --regex "^pub (struct|enum|trait) " ""
-            | str replace --regex "[\s<({].*" ""
+            | str replace --regex '[\s<({].*' ""
             | str trim
         )
 

@@ -59,17 +59,17 @@ def main [
         try {
             ls $tests_dir
             | where type == "file"
-            | where name =~ "\.rs$"
+            | where name =~ '\.rs$'
             | each {|f|
                 let content = (open $f.name)
                 let test_names = (
                     $content
                     | lines
-                    | where {|l| $l =~ "^(pub |async |pub async )?fn test_"}
+                    | where {|l| $l =~ '^(pub |async |pub async )?fn test_'}
                     | each {|l|
                         $l
-                        | str replace --regex "^.*(fn test_)" "test_"
-                        | str replace --regex "\(.*" ""
+                        | str replace --regex '^.*(fn test_)' 'test_'
+                        | str replace --regex '\(.*' ''
                         | str trim
                     }
                 )

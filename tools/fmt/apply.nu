@@ -29,7 +29,8 @@ def main [
 
     let before = (
         try {
-            do { cd $workspace_root; cargo fmt ...$check_args -- --check 2>&1 } | complete
+            cd $workspace_root
+            cargo fmt ...$check_args -- --check | complete
         } catch { {exit_code: 0, stdout: ""} }
     )
 
@@ -42,7 +43,8 @@ def main [
     # Apply formatting
     let result = (
         try {
-            do { cd $workspace_root; cargo fmt ...$check_args 2>&1 } | complete
+            cd $workspace_root
+            cargo fmt ...$check_args | complete
         } catch {|err|
             return { ok: false, data: null, error: $"failed to run cargo fmt: ($err.msg)" }
         }

@@ -100,8 +100,8 @@ proptest! {
     //
     // Example:
     // #[test]
-    // fn prop_example(s in \".*\") {
-    //     prop_assert!(my_function(&s).is_ok());
+    // fn prop_example\(s in '.*'\) {
+    //     prop_assert!\(my_function\(&s\).is_ok\(\)\);
     // }
 }
 "

@@ -73,6 +73,11 @@ pub async fn boot_actor_system(
 
     // ── OrchestratorActor ────────────────────────────────────────────────────
     let system_prompt = Arc::new(RwLock::new(String::new()));
+
+    let output_path = config.agent.output_path
+        .clone()
+        .unwrap_or_default();
+
     let (orch_ref, _orch_handle) = Actor::spawn(
         Some("orchestrator".into()),
         OrchestratorActor,
@@ -80,6 +85,7 @@ pub async fn boot_actor_system(
             event_bus:     Arc::clone(&event_bus),
             system_prompt: Arc::clone(&system_prompt),
             cwd:           config.shell.cwd.clone(),
+            output_path:   format!("{output_path}.jsonl"),
             rules_section,
             skills_section,
         },
@@ -89,11 +95,18 @@ pub async fn boot_actor_system(
 
     register_builtins(&orch_ref).context("Registering builtin capabilities")?;
 
+    let mut shell_env = config.shell.env.clone();
+    shell_env.insert("WORKSPACE_ROOT".into(), config.shell.cwd.clone());
+    if let Some(ref tf) = config.agent.task_file {
+        shell_env.insert("TASKFILE".into(), tf.display().to_string());
+        tracing::info!(taskfile = %tf.display(), "Injecting TASKFILE into shell env");
+    }
+
     // ── ToolboxActor ─────────────────────────────────────────────────────────
     // Shared tool registry — ToolboxActor writes, ToolRouterActor reads.
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
     let shell_for_toolbox = Arc::new(AsyncRwLock::new(
-        ShellWorker::spawn(&config.shell.cwd).context("Spawning ShellWorker for ToolboxActor")?
+        ShellWorker::spawn(&config.shell.cwd, &shell_env).context("Spawning ShellWorker for ToolboxActor")?
     ));
 
     let (toolbox_ref, _toolbox_handle) = Actor::spawn(
@@ -122,7 +135,7 @@ pub async fn boot_actor_system(
     info!(prompt_len = system_prompt.read().unwrap().len(), "OrchestratorActor: ready");
 
     // ── ShellWorker (agent's shell) ──────────────────────────────────────────
-    let shell = ShellWorker::spawn(&config.shell.cwd)
+    let shell = ShellWorker::spawn(&config.shell.cwd, &shell_env)
         .context("Spawning ShellWorker")?;
     info!(cwd = %config.shell.cwd, "ShellWorker: ready");
 

@@ -16,10 +16,11 @@ pub struct NushellSession {
     stack: Stack,
     seq: u64,
     cwd: String,
+    env: std::collections::HashMap<String, String>,
 }
 
 impl NushellSession {
-    pub fn new(cwd: &str) -> Result<Self> {
+    pub fn new(cwd: &str, env: &std::collections::HashMap<String, String>) -> Result<Self> {
         let engine = create_engine(cwd)?;
         let mut stack = Stack::new();
 
@@ -28,11 +29,18 @@ impl NushellSession {
         }
         stack.add_env_var("PWD".into(), Value::string(cwd, Span::unknown()));
 
+        for (k, v) in env {
+            // Set in both the nushell stack AND the OS environment
+            std::env::set_var(k, v);
+            stack.add_env_var(k.clone(), Value::string(v.clone(), Span::unknown()));
+        }
+
         Ok(Self {
             engine: Arc::new(engine),
             stack,
             seq: 0,
             cwd: cwd.to_string(),
+            env: env.clone(),
         })
     }
 
@@ -103,8 +111,11 @@ impl NushellSession {
     pub fn reset_stack(&mut self) {
         warn!("Resetting shell stack");
         self.stack = Stack::new();
-        self.stack
-            .add_env_var("PWD".into(), Value::string(&self.cwd, Span::unknown()));
+        self.stack.add_env_var("PWD".into(), Value::string(&self.cwd, Span::unknown()));
+        for (k, v) in &self.env {
+            std::env::set_var(k, v);
+            self.stack.add_env_var(k.clone(), Value::string(v.clone(), Span::unknown()));
+        }
     }
 
     pub fn engine(&self) -> Arc<EngineState> {

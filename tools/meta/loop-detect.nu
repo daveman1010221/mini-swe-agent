@@ -38,14 +38,10 @@ def main [
 
     # Load and parse trajectory events
     let events = (
-        try {
-            open $trajectory
-            | lines
-            | where ($it | str length) > 0
-            | each {|line| $line | from json}
-        } catch {|err|
-            return { ok: false, data: null, error: $"Failed to parse trajectory: ($err.msg)" }
-        }
+        open --raw $trajectory
+        | lines
+        | where ($it | str length) > 0
+        | each {|line| $line | from json}
     )
 
     if ($events | is-empty) {

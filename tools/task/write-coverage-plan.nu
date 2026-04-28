@@ -20,8 +20,8 @@ def main [
     --public-interfaces: string = "[]",   # JSON array of interface names
     --failure-modes: string = "[]",        # JSON array of {interface, modes}
     --boundary-conditions: string = "[]",  # JSON array of strings
-    --serde-required: bool = false,
-    --rkyv-required: bool = false,
+    --serde-required,
+    --rkyv-required,
     --existing-tests: int = 0,
     --planned-tests: string = "[]",        # JSON array of {name, type, rationale}
 ] {
@@ -38,7 +38,7 @@ def main [
     }
 
     let tf = (
-        try { open $tf_path | from json }
+        try { open --raw $tf_path | from json }
         catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
     )
 

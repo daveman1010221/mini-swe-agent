@@ -68,15 +68,15 @@ def main [
         try {
             ls $tests_dir
             | where type == "file"
-            | where name =~ "\.rs$"
+            | where name =~ '\.rs$'
             | each {|f|
                 open $f.name
                 | lines
-                | where {|l| $l =~ "fn test_" or $l =~ "fn prop_"}
+                | where {|l| ($l =~ 'fn test_') or ($l =~ 'fn prop_')}
                 | each {|l|
                     $l
-                    | str replace --regex "^.*(fn )" ""
-                    | str replace --regex "\(.*" ""
+                    | str replace --regex '^.*(fn )' ''
+                    | str replace --regex '\(.*' ''
                     | str trim
                 }
             }
@@ -106,21 +106,22 @@ def main [
     let coverage_rate = if $plan_count > 0 { $covered / $plan_count } else { 0.0 }
 
     # Run the tests to check they pass (if workspace-root provided)
-    let tests_pass = if ($workspace_root | str length) > 0 and $uncovered_count == 0 {
+    let tests_pass = if (($workspace_root | str length) > 0) and ($uncovered_count == 0) {
         let crate_name = ($crate_path | path basename)
         let result = (
             try {
-                do { cd $workspace_root; cargo test --package $crate_name 2>&1 } | complete
+                cd $workspace_root
+                cargo test --package $crate_name | complete
             } catch { {exit_code: 1} }
         )
         $result.exit_code == 0
     } else if $uncovered_count > 0 {
         false
     } else {
-        true  # No workspace root — assume pass if all planned tests exist
+        true
     }
 
-    let gate_passed = $uncovered_count == 0 and $tests_pass
+    let gate_passed = ($uncovered_count == 0) and $tests_pass
 
     {
         ok: true,

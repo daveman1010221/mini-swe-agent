@@ -50,7 +50,7 @@ def main [
     let next_step = if $task_completed {
         null
     } else {
-        $playbook_steps | get $next_index?
+        $playbook_steps | get $next_index
     }
 
     # Update the task file

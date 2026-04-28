@@ -21,14 +21,15 @@ pub struct ShellWorker {
 }
 
 impl ShellWorker {
-    pub fn spawn(cwd: impl Into<String>) -> Result<Self> {
+    pub fn spawn(cwd: impl Into<String>, env: &std::collections::HashMap<String, String>) -> Result<Self> {
         let cwd = cwd.into();
         let (tx, rx) = mpsc::sync_channel::<ShellRequest>(32);
 
         let thread_cwd = cwd.clone();
+        let thread_env = env.clone();
         thread::Builder::new()
             .name("nu-session".into())
-            .spawn(move || session_thread(rx, &thread_cwd))
+            .spawn(move || session_thread(rx, &thread_cwd, &thread_env))
             .context("Spawning nu-session thread")?;
 
         info!(cwd, "ShellWorker started");
@@ -56,8 +57,8 @@ impl ShellWorker {
     }
 }
 
-fn session_thread(rx: mpsc::Receiver<ShellRequest>, cwd: &str) {
-    let mut session = match NushellSession::new(cwd) {
+fn session_thread(rx: mpsc::Receiver<ShellRequest>, cwd: &str, env: &std::collections::HashMap<String, String>) {
+    let mut session = match NushellSession::new(cwd, env) {
         Ok(s) => s,
         Err(e) => {
             error!(error = %e, "Failed to create NushellSession — shell thread exiting");

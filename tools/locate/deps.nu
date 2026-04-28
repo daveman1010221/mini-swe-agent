@@ -28,8 +28,9 @@ def main [
     # Find workspace root by walking up
     let workspace_root = (
         try {
-            let output = (do { cd $crate_path; cargo metadata --no-deps --format-version 1 2>/dev/null } | from json)
-            $output.workspace_root? | default ""
+            cd $crate_path
+            let output = (cargo metadata --no-deps --format-version 1 | complete)
+            if $output.exit_code == 0 { $output.stdout | from json | get workspace_root? | default "" } else { "" }
         } catch {
             ""
         }
@@ -56,11 +57,10 @@ def main [
 
     # Parse deps from toml
     def parse_deps [section: string, dep_kind: string] {
-        let raw = ($toml | get $section? | default {})
+        let raw = (try { $toml | get $section | default {} } catch { {} })
         $raw | transpose name spec | each {|row|
             let is_workspace = (
-                ($row.spec | describe) == "record" and
-                (($row.spec | get workspace? | default false) == true)
+                ($row.spec | describe) == "record" and (($row.spec | get workspace? | default false) == true)
             )
             let version = if $is_workspace {
                 "workspace"

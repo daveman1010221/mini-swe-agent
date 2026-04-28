@@ -39,13 +39,10 @@ def main [
 
     let result = (
         try {
-            do {
-                cd $workspace_root
-                cargo test --package $crate ...(
-                    if $target != "all" { ["--test" $target] } else { [] }
-                ) --no-fail-fast -- --nocapture 2>&1
-            }
-            | complete
+            cd $workspace_root
+            cargo test --package $crate ...(
+                if $target != "all" { ["--test" $target] } else { [] }
+            ) --no-fail-fast -- --nocapture | complete
         } catch {|err|
             return { ok: false, data: null, error: $"failed to run cargo test: ($err.msg)" }
         }

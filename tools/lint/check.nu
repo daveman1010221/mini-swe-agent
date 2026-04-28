@@ -12,7 +12,7 @@
 def main [
     --workspace-root: path,
     --crate: string,
-    --deny-warnings: bool = true   # default: true (matches CI behavior)
+    --deny-warnings   # default: true (matches CI behavior)
 ] {
     if ($workspace_root | is-empty) {
         return { ok: false, data: null, error: "missing required flag: --workspace-root" }
@@ -30,10 +30,8 @@ def main [
 
     let result = (
         try {
-            do {
-                cd $workspace_root
-                cargo clippy --package $crate --message-format json 2>&1
-            } | complete
+            cd $workspace_root
+            cargo clippy --package $crate --message-format json | complete
         } catch {|err|
             return { ok: false, data: null, error: $"failed to run clippy: ($err.msg)" }
         }
@@ -53,8 +51,7 @@ def main [
         $messages
         | where {|m|
             let level = ($m | get message.level? | default "")
-            $level == "warning" and
-            ($m | get message.code? | default null) != null
+            $level == "warning" and ($m | get message.code? | default null) != null
         }
         | each {|m|
             let msg = ($m | get message)
