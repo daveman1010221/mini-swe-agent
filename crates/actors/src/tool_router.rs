@@ -235,6 +235,7 @@ async fn dispatch_nushell_tool(
     // Look up the script path from the tool registry
     let script_path = {
         let registry = state.tool_registry.read().await;
+        tracing::debug!(count = registry.count(), "ToolRegistry lookup");
         registry.get(&full_name).map(|e| e.script_path.clone())
     };
 

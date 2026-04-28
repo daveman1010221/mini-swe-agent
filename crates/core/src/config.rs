@@ -76,10 +76,15 @@ pub struct RunMeta {
 /// Parsed agent-task.json — the agent's mission briefing.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskFile {
+    #[serde(default)]
     pub schema_version: String,
+    #[serde(default)]
     pub session_id: String,
+    #[serde(default)]
     pub workspace_root: String,
+    #[serde(default)]
     pub taskfile: String,
+    #[serde(default)]
     pub last_updated: String,
     #[serde(default)]
     pub schema_notes: String,

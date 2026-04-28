@@ -1,0 +1,13 @@
+{
+  "workspace_root": "/workspace",
+  "current_task": {
+    "crate": "mswea-core",
+    "crate_path": "crates/core",
+    "op": "write-tests",
+    "step": "survey",
+    "step_index": 0,
+    "step_attempts": 0,
+    "step_budget": 3
+  },
+  "pending": []
+}

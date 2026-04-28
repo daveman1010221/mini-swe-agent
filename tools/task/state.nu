@@ -106,10 +106,8 @@ def main [
             completed_count: $completed_count,
             blocked_count: $blocked_count,
             halted_count: $halted_count,
-
             # Urgency flags — agent should check these every OBSERVE
-            budget_warning: $budget_remaining <= 1,
-            budget_exhausted: $budget_exhausted,
+            budget_warning: ($budget_remaining <= 1),
         },
         error: null
     }

@@ -35,12 +35,17 @@ pub enum ToolCall {
     NushellTool {
         namespace: String,
         tool: String,
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_args")]
         args: String,
     },
 
     /// Agent considers the task done.
     Submit { output: String },
+}
+
+fn deserialize_args<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(v.to_string())
 }
 
 impl ToolCall {

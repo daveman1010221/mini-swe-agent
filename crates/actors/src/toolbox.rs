@@ -78,6 +78,7 @@ pub struct ToolboxState {
     mswea_root: PathBuf,
     shell: Arc<RwLock<environments::ShellWorker>>,
     tool_registry: ToolRegistry,
+    shared_tool_registry: Arc<AsyncRwLock<ToolRegistry>>,
     playbook_registry: PlaybookRegistry,
     skills: String,
 }
@@ -106,6 +107,9 @@ impl Actor for ToolboxActor {
         let playbook_registry = scan_playbooks(&playbook_dir);
         let skills            = load_skills(&skills_dir);
 
+        // Write into the shared Arc so ToolRouterActor can see the registry
+        *args.tool_registry.write().await = tool_registry.clone();
+
         info!(
             tools     = tool_registry.count(),
             playbooks = playbook_registry.count(),
@@ -131,6 +135,7 @@ impl Actor for ToolboxActor {
             mswea_root: args.mswea_root,
             shell: args.shell,
             tool_registry,
+            shared_tool_registry: args.tool_registry,
             playbook_registry,
             skills,
         })
@@ -152,20 +157,25 @@ impl Actor for ToolboxActor {
                 state.playbook_registry = scan_playbooks(&playbook_dir);
                 state.skills            = load_skills(&skills_dir);
 
+                *state.shared_tool_registry.write().await = state.tool_registry.clone();
+
                 info!(
                     tools     = state.tool_registry.count(),
                     playbooks = state.playbook_registry.count(),
                     "ToolboxActor: reloaded all"
                 );
-
                 self.push_update(state, None, None).await?;
             }
 
             ToolboxMsg::ReloadTools => {
                 let tools_dir    = state.mswea_root.join("tools");
                 let playbook_dir = state.mswea_root.join("tools").join("playbooks");
+
                 state.tool_registry     = scan_tools(&tools_dir);
                 state.playbook_registry = scan_playbooks(&playbook_dir);
+
+                *state.shared_tool_registry.write().await = state.tool_registry.clone();
+
                 info!(tools = state.tool_registry.count(), "ToolboxActor: reloaded tools");
                 self.push_update(state, None, None).await?;
             }

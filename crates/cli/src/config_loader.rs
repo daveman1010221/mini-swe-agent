@@ -111,7 +111,7 @@ fn default_run_config() -> RunConfig {
             extra_kwargs: serde_json::Value::Null,
         },
         shell: ShellConfig {
-            cwd: "/".into(),
+            cwd: "/workspace".into(),
             timeout_secs: 30,
             env: Default::default(),
         },

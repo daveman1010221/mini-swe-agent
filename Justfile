@@ -111,6 +111,7 @@ run-nvidia:
 run-dev-container:
     podman run --rm --name mswea-dev -it \
         --user 0 --userns=keep-id \
+        --network=host \
         -e CREATE_USER="$USER" \
         -e CREATE_UID="$(id -u)" \
         -e CREATE_GID="$(id -g)" \

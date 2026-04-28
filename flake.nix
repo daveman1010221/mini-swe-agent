@@ -95,7 +95,13 @@
           });
         };
 
-        devShells.default = container.devShell;
+        devShells.default = pkgs.mkShell {
+          inputsFrom = [ container.devShell ];
+          shellHook = ''
+            export OPENAI_BASE_URL="http://172.26.26.88:8080/v1"
+            export OPENAI_API_KEY="sk-local"
+          '';
+        };
       }
     );
 }
