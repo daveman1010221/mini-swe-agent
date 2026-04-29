@@ -128,7 +128,52 @@ impl NushellSession {
             format!("{script}\nmain {flags}")
         };
         let _ = std::env::set_current_dir(&self.cwd);
-        self.eval(&command)
+        self.eval_ephemeral(&command)
+    }
+
+    fn eval_ephemeral(&mut self, command: &str) -> Result<(Value, i64)> {
+        self.stack.remove_env_var(&self.engine, "LAST_EXIT_CODE");
+        self.seq += 1;
+        let source_name = format!("mswea_tool_{}", self.seq);
+
+        let mut working_set = StateWorkingSet::new(&self.engine);
+        let block = parse(&mut working_set, Some(&source_name), command.as_bytes(), false);
+
+        if !working_set.parse_errors.is_empty() {
+            let msg = working_set.parse_errors.iter()
+                .map(|e| format!("{e}"))
+                .collect::<Vec<_>>()
+                .join("; ");
+            return Err(anyhow!("Parse error: {msg}"));
+        }
+
+        if let Err(e) = nu_engine::compile(&working_set, &block) {
+            debug!(error = %e, "IR compile warning");
+        }
+
+        // ── Key difference: do NOT merge delta into persistent engine ──
+        // This prevents def main from accumulating across tool calls.
+
+        // We still need a temporary engine with the delta for eval
+        let mut temp_engine = (*self.engine).clone();
+        let delta = working_set.render();
+        temp_engine.merge_delta(delta)?;
+        let temp_engine = Arc::new(temp_engine);
+
+        let eval_fn = get_eval_block_with_early_return(&temp_engine);
+        let result = eval_fn(&temp_engine, &mut self.stack, &block, PipelineData::empty());
+
+        match result {
+            Ok(exec_data) => {
+                let value = exec_data.body.into_value(Span::unknown())?;
+                let exit_code = self.stack
+                    .get_env_var(&temp_engine, "LAST_EXIT_CODE")
+                    .and_then(|v| v.as_int().ok())
+                    .unwrap_or(0);
+                Ok((value, exit_code))
+            }
+            Err(shell_err) => Err(anyhow!("{shell_err}")),
+        }
     }
 
     pub fn engine(&self) -> Arc<EngineState> {

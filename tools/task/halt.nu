@@ -33,12 +33,12 @@ def main [
         return { ok: false, data: null, error: "missing required flag: --reason" }
     }
 
-    if ($ooda_phase | str length) == 0 {
+    if ($ooda_phase | default "" | str length) == 0 {
         return { ok: false, data: null, error: "missing required flag: --ooda-phase" }
     }
 
     let tf = (
-        try { open $tf_path | from json }
+        try { open --raw $tf_path | from json }
         catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
     )
 

@@ -61,14 +61,4 @@ def main [
         },
         error: null
     }
-
-    {
-        ok: true,
-        data: {
-            tool: $tool,
-            script: $script,
-            help: $result.stdout,
-        },
-        error: null
-    }
 }

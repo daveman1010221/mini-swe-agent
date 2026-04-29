@@ -22,6 +22,7 @@ let msweaExtras =
     , Lib.nixpkgs "just"
     , Lib.nixpkgs "jq"
     , Lib.nixpkgs "dropbear"
+    , Lib.nixpkgs "git"
     ]
 
 -- ---------------------------------------------------------------------------

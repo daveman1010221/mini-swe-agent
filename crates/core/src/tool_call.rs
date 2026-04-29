@@ -45,7 +45,10 @@ pub enum ToolCall {
 
 fn deserialize_args<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D::Error> {
     let v = serde_json::Value::deserialize(d)?;
-    Ok(v.to_string())
+    match v {
+        serde_json::Value::String(s) => Ok(s),
+        other => Ok(other.to_string()),
+    }
 }
 
 impl ToolCall {

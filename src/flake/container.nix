@@ -40,6 +40,7 @@
           { attrPath = "just"; flakeInput = null; }
           { attrPath = "jq"; flakeInput = null; }
           { attrPath = "dropbear"; flakeInput = null; }
+          { attrPath = "git"; flakeInput = null; }
         ];
       })
   ];
