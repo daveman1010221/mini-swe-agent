@@ -7,24 +7,8 @@
     "step": "survey",
     "step_index": 0,
     "step_attempts": 0,
-    "step_budget": 3,
-    "coverage_plan": {
-      "public_interfaces": [],
-      "failure_modes": [],
-      "boundary_conditions": [],
-      "serde_required": true,
-      "rkyv_required": false,
-      "existing_tests": 0,
-      "planned_tests": [
-        {
-          "name": "test_foo",
-          "type": "unit",
-          "rationale": "test"
-        }
-      ],
-      "written_at": "2026-04-28T20:55:03Z"
-    }
+    "step_budget": 3
   },
   "pending": [],
-  "last_updated": "2026-04-28T20:55:03Z"
+  "completed": []
 }

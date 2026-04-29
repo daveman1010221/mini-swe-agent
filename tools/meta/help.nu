@@ -41,7 +41,26 @@ def main [
         }
     }
 
-    let result = (do { nu $script --help } | complete)
+    let content = (open --raw $script)
+    
+    # Extract the def main [...] signature
+    let sig = (
+        $content
+        | lines
+        | skip while {|l| not ($l =~ 'def main')}
+        | take while {|l| not ($l =~ '^\}') and not ($l =~ '^\{')}
+        | str join "\n"
+    )
+
+    {
+        ok: true,
+        data: {
+            tool: $tool,
+            script: $script,
+            help: $sig,
+        },
+        error: null
+    }
 
     {
         ok: true,

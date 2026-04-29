@@ -28,7 +28,6 @@ def main [
     # Run cargo check with JSON message format for structured output
     let result = (
         try {
-            cd $workspace_root
             cargo check --package $crate --message-format json | complete
         } catch {|err|
             return { ok: false, data: null, error: $"failed to run cargo check: ($err.msg)" }

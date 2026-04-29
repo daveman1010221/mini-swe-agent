@@ -39,7 +39,6 @@ def main [
 
     let result = (
         try {
-            cd $workspace_root
             cargo test --package $crate ...(
                 if $target != "all" { ["--test" $target] } else { [] }
             ) --no-fail-fast -- --nocapture | complete
