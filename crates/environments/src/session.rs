@@ -119,6 +119,18 @@ impl NushellSession {
         }
     }
 
+    pub fn call_tool(&mut self, script_path: &std::path::Path, flags: &str) -> Result<(Value, i64)> {
+        let script = std::fs::read_to_string(script_path)
+            .map_err(|e| anyhow!("Failed to read script {}: {e}", script_path.display()))?;
+        let command = if flags.is_empty() {
+            format!("{script}\nmain")
+        } else {
+            format!("{script}\nmain {flags}")
+        };
+        let _ = std::env::set_current_dir(&self.cwd);
+        self.eval(&command)
+    }
+
     pub fn engine(&self) -> Arc<EngineState> {
         self.engine.clone()
     }

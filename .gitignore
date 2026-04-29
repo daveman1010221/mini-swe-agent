@@ -4,3 +4,4 @@
 *.tar.gz
 result*
 .direnv/
+agent-task.json

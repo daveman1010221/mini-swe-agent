@@ -1,5 +1,6 @@
 //! `ShellWorker` — dedicated thread owning the `NushellSession`.
 
+use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
@@ -10,9 +11,16 @@ use tracing::{debug, error, info};
 use crate::session::NushellSession;
 use crate::value_to_observation::value_to_observation;
 
-struct ShellRequest {
-    command: String,
-    reply: mpsc::SyncSender<Result<Observation>>,
+enum ShellRequest {
+    Exec {
+        command: String,
+        reply: mpsc::SyncSender<Result<Observation>>,
+    },
+    CallTool {
+        script_path: PathBuf,
+        flags: String,
+        reply: mpsc::SyncSender<Result<Observation>>,
+    },
 }
 
 #[derive(Clone)]
@@ -42,8 +50,30 @@ impl ShellWorker {
 
         tokio::task::spawn_blocking(move || {
             let (reply_tx, reply_rx) = mpsc::sync_channel(1);
-            tx.send(ShellRequest {
+            tx.send(ShellRequest::Exec {
                 command,
+                reply: reply_tx,
+            })
+            .map_err(|_| anyhow!("Shell worker thread has exited"))?;
+
+            reply_rx
+                .recv()
+                .map_err(|_| anyhow!("Shell worker reply channel closed"))?
+        })
+        .await
+        .context("spawn_blocking panicked")?
+    }
+
+    pub async fn call_tool(&self, script_path: &std::path::Path, flags: &str) -> Result<Observation> {
+        let script_path = script_path.to_path_buf();
+        let flags = flags.to_string();
+        let tx = self.tx.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            tx.send(ShellRequest::CallTool {
+                script_path,
+                flags,
                 reply: reply_tx,
             })
             .map_err(|_| anyhow!("Shell worker thread has exited"))?;
@@ -69,9 +99,18 @@ fn session_thread(rx: mpsc::Receiver<ShellRequest>, cwd: &str, env: &std::collec
     info!("Nu session thread ready");
 
     for req in rx {
-        debug!(command = %req.command, "Shell exec");
-        let result = run_command(&mut session, &req.command);
-        let _ = req.reply.send(result);
+        match req {
+            ShellRequest::Exec { command, reply } => {
+                debug!(command = %command, "Shell exec");
+                let result = run_command(&mut session, &command);
+                let _ = reply.send(result);
+            }
+            ShellRequest::CallTool { script_path, flags, reply } => {
+                debug!(script = %script_path.display(), flags = %flags, "Tool call");
+                let result = run_tool(&mut session, &script_path, &flags);
+                let _ = reply.send(result);
+            }
+        }
     }
 
     info!("Nu session thread exiting");
@@ -86,6 +125,20 @@ fn run_command(session: &mut NushellSession, command: &str) -> Result<Observatio
                 message: e.to_string(),
                 exit_code: Some(1),
                 tool_call_summary: format!("shell: {}", truncate(command, 60)),
+            })
+        }
+    }
+}
+
+fn run_tool(session: &mut NushellSession, script_path: &std::path::Path, flags: &str) -> Result<Observation> {
+    match session.call_tool(script_path, flags) {
+        Ok((value, exit_code)) => Ok(value_to_observation(value, exit_code)),
+        Err(e) => {
+            // Tool errors don't reset the stack — they're clean failures
+            Ok(Observation::Error {
+                message: e.to_string(),
+                exit_code: Some(1),
+                tool_call_summary: format!("tool: {}", truncate(&script_path.display().to_string(), 60)),
             })
         }
     }

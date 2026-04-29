@@ -290,7 +290,7 @@ async fn dispatch_nushell_tool(
         }
     }
 
-    // Build the nushell command: nu <script_path> <flags from args>
+    // Build flags string
     let mut flags = args_to_flags(args);
 
     // Inject --taskfile for task/* tools if not already provided
@@ -300,7 +300,7 @@ async fn dispatch_nushell_tool(
         }
     }
 
-    let command = format!("nu {} {}", script_path.display(), flags);
+    let command_summary = format!("tool: {} {}", script_path.display(), flags);
 
     tracing::info!(
         tool = %full_name,
@@ -311,12 +311,12 @@ async fn dispatch_nushell_tool(
     state.event_bus.send(Event::new(
         "tool-router",
         EventKind::ShellCommandStarted {
-            command: command.clone(),
+            command: command_summary.clone(),
             cwd: state.cwd.clone(),
         },
     ));
 
-    match state.shell.exec(&command).await {
+    match state.shell.call_tool(&script_path, &flags).await {
         Ok(obs) => {
             if let Observation::Structured { exit_code, .. } = &obs {
                 state.event_bus.send(Event::new(
