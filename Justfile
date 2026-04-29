@@ -343,6 +343,7 @@ agent-clean:
     rm -f /tmp/mswea-core-tests.jsonl
     rm -f crates/core/tests/unit.rs
     rm -f crates/core/tests/props.rs
+    git checkout agent-task.json
 
 # Clean and run the agent
 agent-run: agent-clean build-release
