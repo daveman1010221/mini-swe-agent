@@ -25,7 +25,7 @@ def main [
     }
 
     let tf = (
-        try { open $tf_path | from json }
+        try { open --raw $tf_path | from json }
         catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
     )
 

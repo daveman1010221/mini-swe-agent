@@ -22,6 +22,9 @@ IMPORTANT: The submit tool requires exactly this field name:
 {% if toolbox_section %}
 {{ toolbox_section }}
 {% endif %}
+{% if shell_section %}
+{{ shell_section }}
+{% endif %}
 
 ## Nushell Environment Rules (STRICT)
 - Shell is nushell 0.111 — NOT bash. Bash syntax will always fail.

@@ -47,7 +47,7 @@ def main [
 
     # For each file, extract actor details
     let actors = ($actor_files | each {|file|
-        let content = (open $file)
+        let content = (open --raw $file)
 
         # Find Actor impl blocks
         let impl_lines = (

@@ -31,11 +31,11 @@ def main [
         return { ok: false, data: null, error: $"Cargo.toml not found: ($cargo_toml_path)" }
     }
 
-    let content = (open --raw $cargo_toml_path)
+    let content = (open --raw $cargo_toml_path | from toml)
     let dep_snake = ($dep | str replace "-" "_")
 
     # Check if already declared
-    let toml = (open $cargo_toml_path)
+    let toml = (open --raw $cargo_toml_path | from toml)
     let dev_deps = ($toml | get "dev-dependencies"? | default {})
     let already_exists = ($dev_deps | columns | any {|c| $c == $dep or $c == $dep_snake})
 
@@ -56,7 +56,7 @@ def main [
 
     # Check workspace availability
     let workspace_available = if ($ws_toml_path | path exists) {
-        let ws_toml = (open $ws_toml_path)
+        let ws_toml = (open --raw $ws_toml_path | from toml)
         let ws_deps = ($ws_toml | get workspace.dependencies? | default {})
         ($ws_deps | columns | any {|c| $c == $dep or $c == $dep_snake})
     } else {

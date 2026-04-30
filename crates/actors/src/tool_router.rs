@@ -21,7 +21,7 @@ use mswea_core::{
     event::{Event, EventKind},
     observation::Observation,
     toolbox::ToolRegistry,
-    ToolCall,
+    ShellPolicy, ToolCall,
 };
 
 use crate::event_bus::EventBus;
@@ -51,6 +51,8 @@ pub struct ToolRouterArgs {
     pub cwd: String,
     /// Shared tool registry — updated by ToolboxActor.
     pub tool_registry: Arc<RwLock<ToolRegistry>>,
+    /// Shared shell policy — updated by ToolboxActor.
+    pub shell_policy: Arc<RwLock<ShellPolicy>>,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -60,6 +62,7 @@ pub struct ToolRouterState {
     event_bus: EventBus,
     cwd: String,
     tool_registry: Arc<RwLock<ToolRegistry>>,
+    shell_policy: Arc<RwLock<ShellPolicy>>,
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -82,6 +85,7 @@ impl Actor for ToolRouterActor {
             event_bus: args.event_bus,
             cwd: args.cwd,
             tool_registry: args.tool_registry,
+            shell_policy: args.shell_policy,
         })
     }
 
@@ -110,6 +114,17 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
                     cwd: state.cwd.clone(),
                 },
             ));
+
+            // Policy check — read lock is non-blocking in the happy path
+            let policy = state.shell_policy.read().await;
+            if let Err(msg) = policy.check(command) {
+                return Observation::Error {
+                    message: msg,
+                    exit_code: Some(126), // POSIX: command not executable
+                    tool_call_summary: format!("shell[blocked]: {}", truncate(command, 60)),
+                };
+            }
+            drop(policy);
 
             match state.shell.exec(command).await {
                 Ok(o) => {
@@ -359,8 +374,13 @@ fn args_to_flags(args: &serde_json::Value) -> String {
             let flag = k.replace('_', "-");
             let val = match v {
                 serde_json::Value::String(s) => {
-                    if s.contains(' ') {
-                        format!("'{s}'")
+                    if s.contains(' ') || s.starts_with('[') || s.starts_with('{') {
+                        // Double-quote and escape inner quotes so nushell receives
+                        // the value as a proper string, not a single-quoted literal.
+                        // Single quotes in nushell prevent all interpolation and break
+                        // from json parsing when the value is a JSON array/object.
+                        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                        format!("\"{escaped}\"")
                     } else {
                         s.clone()
                     }

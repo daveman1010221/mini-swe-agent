@@ -17,7 +17,7 @@ def main [
     }
 
     # Find playbook file — search relative to this script's location
-    let script_dir = ($env.CURRENT_FILE | path dirname | path dirname)
+    let script_dir = ($env.WORKSPACE_ROOT? | default "/workspace")
     let playbook_dir = ($script_dir | path join "playbooks")
     let playbook_file = ($playbook_dir | path join $"($type).nu")
 

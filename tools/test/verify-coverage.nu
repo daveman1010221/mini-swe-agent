@@ -33,7 +33,7 @@ def main [
     }
 
     let tf = (
-        try { open $tf_path | from json }
+        try { open --raw $tf_path | from json }
         catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
     )
 
@@ -70,7 +70,7 @@ def main [
             | where type == "file"
             | where name =~ '\.rs$'
             | each {|f|
-                open $f.name
+                open --raw $f.name
                 | lines
                 | where {|l| ($l =~ 'fn test_') or ($l =~ 'fn prop_')}
                 | each {|l|

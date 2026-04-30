@@ -32,6 +32,7 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use mswea_core::{
+    ShellPolicy,
     config::CurrentTask,
     toolbox::{
         OodaPhase, Playbook, PlaybookRegistry, PlaybookStep, PreflightResult,
@@ -53,12 +54,13 @@ pub enum ToolboxMsg {
     ReloadTools,
     /// Re-scan skills/ only.
     ReloadSkills,
+    // Trigger a policy recompute.
+    ReloadPolicy,
     /// A new task has been loaded — run preflight survey.
     TaskLoaded(CurrentTask),
 }
 
 // ── Arguments ─────────────────────────────────────────────────────────────────
-
 pub struct ToolboxArgs {
     pub event_bus: EventBus,
     /// Reference to OrchestratorActor to push updates.
@@ -67,7 +69,8 @@ pub struct ToolboxArgs {
     pub mswea_root: PathBuf,
     /// Shell worker for running nushell scripts during preflight.
     pub shell: Arc<RwLock<environments::ShellWorker>>,
-    pub tool_registry: Arc<AsyncRwLock<ToolRegistry>>,
+    pub tool_registry: Arc<RwLock<ToolRegistry>>,
+    pub shell_policy: Arc<RwLock<ShellPolicy>>,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -81,8 +84,9 @@ pub struct ToolboxState {
     shared_tool_registry: Arc<AsyncRwLock<ToolRegistry>>,
     playbook_registry: PlaybookRegistry,
     skills: String,
+    shell_policy: ShellPolicy,
+    shared_shell_policy: Arc<AsyncRwLock<ShellPolicy>>,
 }
-
 // ── Actor ─────────────────────────────────────────────────────────────────────
 
 pub struct ToolboxActor;
@@ -106,6 +110,9 @@ impl Actor for ToolboxActor {
         let tool_registry     = scan_tools(&tools_dir);
         let playbook_registry = scan_playbooks(&playbook_dir);
         let skills            = load_skills(&skills_dir);
+        let shell_policy      = build_shell_policy();
+
+        *args.shell_policy.write().await = shell_policy.clone();
 
         // Write into the shared Arc so ToolRouterActor can see the registry
         *args.tool_registry.write().await = tool_registry.clone();
@@ -124,6 +131,7 @@ impl Actor for ToolboxActor {
             skills:            skills.clone(),
             preflight:         None,
             current_step:      None,
+            shell_policy:      shell_policy.clone(),
         };
         args.orchestrator
             .cast(OrchestratorMsg::UpdateToolbox(update))
@@ -138,6 +146,8 @@ impl Actor for ToolboxActor {
             shared_tool_registry: args.tool_registry,
             playbook_registry,
             skills,
+            shell_policy,
+            shared_shell_policy: args.shell_policy,
         })
     }
 
@@ -187,6 +197,13 @@ impl Actor for ToolboxActor {
                 self.push_update(state, None, None).await?;
             }
 
+            ToolboxMsg::ReloadPolicy => {
+                state.shell_policy = build_shell_policy();
+                *state.shared_shell_policy.write().await = state.shell_policy.clone();
+                info!("ToolboxActor: shell policy reloaded");
+                self.push_update(state, None, None).await?;
+            }
+
             ToolboxMsg::TaskLoaded(task) => {
                 info!(
                     crate_name = task.crate_name().unwrap_or("unknown"),
@@ -226,10 +243,168 @@ impl ToolboxActor {
             skills:            state.skills.clone(),
             preflight,
             current_step,
+            shell_policy: state.shell_policy.clone(),
         };
         state.orchestrator
             .cast(OrchestratorMsg::UpdateToolbox(update))
             .map_err(|e| ActorProcessingErr::from(format!("Failed to push toolbox update: {e}")))
+    }
+}
+
+/// Build the shell policy by walking PATH at runtime and applying blocklists.
+fn build_shell_policy() -> ShellPolicy {
+    // ── Blocked external prefixes/names ──────────────────────────────────────
+    // Anything matching these is blocked regardless of what's on PATH.
+    // Values are the constructive redirect message shown to the model.
+    let blocked_externals: &[(&str, &str)] = &[
+        // Compiler toolchains — use compile/* tools
+        ("cargo",   "Use the compile/check, compile/fix-hint, test/run, or fmt/apply toolbox tools instead."),
+        ("rustc",   "Direct compiler invocation is not permitted. Use compile/* toolbox tools."),
+        ("rustfmt", "Use the fmt/apply or fmt/check toolbox tools instead."),
+        ("rust-",   "Rust toolchain binaries are not permitted. Use toolbox tools."),
+        ("gcc",     "Compiler invocation is not permitted. Use toolbox tools."),
+        ("g++",     "Compiler invocation is not permitted. Use toolbox tools."),
+        ("cc",      "Compiler invocation is not permitted. Use toolbox tools."),
+        ("c++",     "Compiler invocation is not permitted. Use toolbox tools."),
+        ("clang",   "Compiler invocation is not permitted. Use toolbox tools."),
+        ("make",    "Build system invocation is not permitted. Use toolbox tools."),
+        ("cmake",   "Build system invocation is not permitted. Use toolbox tools."),
+        ("ld",      "Linker invocation is not permitted. Use toolbox tools."),
+        // VCS — not permitted at all currently
+        ("git",     "VCS operations are not permitted via the shell tool."),
+        // Shell/interpreter escape hatches
+        ("bash",    "Shell interpreter escape is not permitted. Use nushell builtins or toolbox tools."),
+        ("sh",      "Shell interpreter escape is not permitted. Use nushell builtins or toolbox tools."),
+        ("fish",    "Shell interpreter escape is not permitted. Use nushell builtins or toolbox tools."),
+        ("nu",      "Spawning a nushell subprocess is not permitted. Use nushell builtins directly."),
+        ("python",  "Python interpreter is not permitted. Use nushell builtins or toolbox tools."),
+        ("python3", "Python interpreter is not permitted. Use nushell builtins or toolbox tools."),
+        ("awk",     "Use nushell builtins (where, select, each, parse) instead."),
+        ("sed",     "Use nushell str replace, parse, or str trim instead."),
+        ("perl",    "Perl interpreter is not permitted. Use nushell builtins."),
+        // Filesystem mutation
+        ("rm",      "File deletion is not permitted via the shell tool."),
+        ("rmdir",   "Directory removal is not permitted via the shell tool."),
+        ("mv",      "File move is not permitted via the shell tool. Use create/* toolbox tools."),
+        ("cp",      "File copy is not permitted via the shell tool. Use create/* toolbox tools."),
+        ("mkdir",   "Directory creation is not permitted via the shell tool. Use create/tests-dir."),
+        ("touch",   "File creation is not permitted via the shell tool. Use create/* toolbox tools."),
+        ("install", "File installation is not permitted via the shell tool."),
+        ("patch",   "patch is not permitted — it mutates files. Use the edit tool or create/* toolbox tools."),
+        ("ln",      "Symlink creation is not permitted via the shell tool."),
+        ("dd",      "dd is not permitted via the shell tool."),
+        ("shred",   "shred is not permitted via the shell tool."),
+        ("truncate","truncate is not permitted via the shell tool."),
+        // Package/env managers
+        ("nix",     "Nix operations are not permitted via the shell tool."),
+        ("nix-",    "Nix operations are not permitted via the shell tool."),
+        // Process control
+        ("kill",    "Process termination is not permitted via the shell tool."),
+        ("pkill",   "Process termination is not permitted via the shell tool."),
+        // Interactive/UI tools
+        ("nvim",    "Interactive editors are not permitted via the shell tool. Use the edit tool."),
+        ("vim",     "Interactive editors are not permitted via the shell tool. Use the edit tool."),
+        ("just",    "just is not permitted — it invokes toolchain commands outside the approved toolbox."),
+        // Network
+        ("curl",    "Network access is not permitted via the shell tool."),
+        ("wget",    "Network access is not permitted via the shell tool."),
+        ("ssh",     "Remote access is not permitted via the shell tool."),
+        ("rsync",   "Remote sync is not permitted via the shell tool."),
+    ];
+
+    let blocked_map: std::collections::HashMap<String, String> = blocked_externals
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect();
+
+    // ── Walk PATH and collect allowed externals ───────────────────────────────
+    let path_var = std::env::var("PATH").unwrap_or_default();
+    let mut allowed_externals: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for dir in path_var.split(':') {
+        let Ok(entries) = std::fs::read_dir(dir) else { continue };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            // Must be executable
+            let Ok(meta) = entry.metadata() else { continue };
+            use std::os::unix::fs::PermissionsExt;
+            if meta.permissions().mode() & 0o111 == 0 { continue; }
+
+            // Skip if blocked by any prefix or exact match
+            let is_blocked = blocked_map.contains_key(&name)
+                || blocked_externals.iter().any(|(prefix, _)| {
+                    prefix.ends_with('-') && name.starts_with(*prefix)
+                });
+
+            if !is_blocked {
+                allowed_externals.insert(name);
+            }
+        }
+    }
+
+    let mut allowed_externals: Vec<String> = allowed_externals.into_iter().collect();
+    allowed_externals.sort();
+
+    // ── Allowed nushell builtins ──────────────────────────────────────────────
+    // Entire allowed categories: filters, strings, math, formats, path,
+    // date, conversions, hash, generators, bits, bytes, debug (non-mutating).
+    // Selected commands from core, filesystem (read-only), system.
+    // This list is the policy of record — enforced by prefix match in ShellPolicy::check().
+    let allowed_builtins: Vec<String> = vec![
+        // core — keywords and safe builtins
+        "if", "else", "for", "while", "loop", "break", "continue", "return",
+        "def", "alias", "use", "module", "export", "const", "let", "mut", "match",
+        "do", "try", "collect", "where",
+        "describe", "echo", "error make", "help", "ignore", "is-admin",
+        "scope", "version",
+        // filesystem — read-only subset
+        "ls", "open", "glob", "du",
+        // system — inspection only
+        "complete", "ps", "sys", "uname", "which", "whoami",
+        // filters — entire category
+        "all", "any", "append", "chunk-by", "chunks", "columns", "compact",
+        "default", "drop", "each", "each while", "enumerate", "every",
+        "filter", "find", "first", "flatten", "get", "group-by", "headers",
+        "insert", "interleave", "is-empty", "is-not-empty", "items", "join",
+        "last", "length", "lines", "merge", "merge deep", "move", "par-each",
+        "prepend", "reduce", "reject", "rename", "reverse", "roll", "rotate",
+        "select", "shuffle", "skip", "slice", "sort", "sort-by", "split list",
+        "take", "tee", "transpose", "uniq", "uniq-by", "update", "update cells",
+        "upsert", "values", "window", "wrap", "zip",
+        // strings — entire category
+        "char", "decode", "detect", "encode", "format", "nu-check", "nu-highlight",
+        "parse", "print", "split", "str", "url decode", "url encode",
+        // math — entire category
+        "math",
+        // formats — entire category
+        "from", "to",
+        // path — entire category
+        "path",
+        // date — entire category
+        "date",
+        // conversions
+        "fill", "format bits", "format number", "into",
+        // hash
+        "hash",
+        // generators
+        "cal", "generate", "seq",
+        // bits
+        "bits",
+        // bytes
+        "bytes",
+        // debug — non-mutating inspection
+        "ast", "debug", "explain", "inspect", "metadata", "timeit", "view",
+        // viewers
+        "grid", "table",
+        // random (useful for test data generation)
+        "random",
+    ].into_iter().map(String::from).collect();
+
+    ShellPolicy {
+        allowed_builtins,
+        allowed_externals,
+        blocked_reasons: blocked_map,
     }
 }
 

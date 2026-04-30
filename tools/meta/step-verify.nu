@@ -88,7 +88,7 @@ def main [
                     | where type == "file"
                     | where name =~ '\.rs$'
                     | each {|f|
-                        open $f.name
+                        open --raw $f.name
                         | lines
                         | where {|l| $l =~ 'fn test_'}
                         | each {|l|

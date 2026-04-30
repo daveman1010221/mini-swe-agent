@@ -21,7 +21,7 @@ def main [
         return { ok: false, data: null, error: $"Cargo.toml not found at: ($toml_path)" }
     }
 
-    let toml = (open $toml_path)
+    let toml = (open --raw $toml_path | from toml)
 
     let name    = ($toml | get package.name?    | default "")
     let version = ($toml | get package.version? | default "")

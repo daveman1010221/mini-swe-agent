@@ -47,7 +47,7 @@ def main [
     }
 
     let by_file = ($test_files | each {|file|
-        let content = (open $file)
+        let content = (open --raw $file)
 
         # Count test functions — handle both regular and async
         let test_names = (

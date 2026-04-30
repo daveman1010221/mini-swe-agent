@@ -21,7 +21,7 @@ use environments::ShellWorker;
 use models::{LitellmClient, ModelActor};
 use mswea_core::{
     config::{CurrentTask, RunConfig},
-    toolbox::ToolRegistry,
+    toolbox::{ToolRegistry, ShellPolicy},
 };
 use ractor::{Actor, ActorRef};
 use tokio::sync::RwLock as AsyncRwLock;
@@ -105,6 +105,9 @@ pub async fn boot_actor_system(
     // ── ToolboxActor ─────────────────────────────────────────────────────────
     // Shared tool registry — ToolboxActor writes, ToolRouterActor reads.
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
+
+    let shell_policy = Arc::new(AsyncRwLock::new(ShellPolicy::default()));
+
     let shell_for_toolbox = Arc::new(AsyncRwLock::new(
         ShellWorker::spawn(&config.shell.cwd, &shell_env).context("Spawning ShellWorker for ToolboxActor")?
     ));
@@ -118,6 +121,7 @@ pub async fn boot_actor_system(
             mswea_root,
             shell:        Arc::clone(&shell_for_toolbox),
             tool_registry: Arc::clone(&tool_registry),
+            shell_policy: Arc::clone(&shell_policy),
         },
     )
     .await
@@ -148,6 +152,7 @@ pub async fn boot_actor_system(
             event_bus: Arc::clone(&event_bus),
             cwd: config.shell.cwd.clone(),
             tool_registry,
+            shell_policy: Arc::clone(&shell_policy),
         },
     )
     .await

@@ -58,6 +58,7 @@ pub struct OrchestratorState {
     toolbox_section: String,
     ooda_section: String,
     env: Environment<'static>,
+    shell_policy_section: String,
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -92,6 +93,7 @@ impl Actor for OrchestratorActor {
             skills_section: args.skills_section,
             toolbox_section: String::new(),
             ooda_section: String::new(),
+            shell_policy_section: String::new(),
             env,
         })
     }
@@ -143,6 +145,8 @@ impl Actor for OrchestratorActor {
                     update.preflight.as_ref(),
                     update.current_step.as_ref(),
                 );
+
+                state.shell_policy_section = update.shell_policy.render_prompt_section();
 
                 regenerate_prompt(state);
             }

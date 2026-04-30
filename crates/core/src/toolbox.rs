@@ -393,14 +393,125 @@ impl PreflightResult {
     }
 }
 
+// ── Shell policy ──────────────────────────────────────────────────────────────
+
+/// Runtime-computed policy governing what the `shell` tool call variant may execute.
+///
+/// Built by `ToolboxActor` at boot by walking PATH and applying a blocklist.
+/// Shared via `Arc<AsyncRwLock<ShellPolicy>>` between `ToolboxActor` (writer)
+/// and `ToolRouterActor` (reader/enforcer). Also rendered into the system prompt
+/// so the model knows exactly what it can use.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ShellPolicy {
+    /// Nushell builtin/keyword names that are allowed in shell tool calls.
+    /// Derived from the full builtin list minus the blocked categories.
+    pub allowed_builtins: Vec<String>,
+
+    /// External binary names (basename only) allowed in shell tool calls.
+    /// Computed at boot by walking PATH and subtracting BLOCKED_EXTERNALS.
+    pub allowed_externals: Vec<String>,
+
+    /// Human-readable reason why a command is blocked, keyed by command name
+    /// or prefix pattern. Used to generate constructive feedback to the model.
+    pub blocked_reasons: std::collections::HashMap<String, String>,
+}
+
+impl ShellPolicy {
+    /// Check whether a shell command string is permitted.
+    /// Parses the leading word and checks it against allowed sets.
+    /// Returns Ok(()) if permitted, Err(message) with redirect guidance if not.
+    pub fn check(&self, command: &str) -> Result<(), String> {
+        let leading = command
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_string();
+
+        if leading.is_empty() {
+            return Ok(());
+        }
+
+        // Builtins and keywords are always multi-word possible ("str replace", etc.)
+        // Check prefix match against allowed_builtins first.
+        let is_allowed_builtin = self.allowed_builtins.iter().any(|b| {
+            // exact match OR the command starts with the builtin name followed by space
+            command == b.as_str() || command.starts_with(&format!("{b} "))
+        });
+        if is_allowed_builtin {
+            return Ok(());
+        }
+
+        // External: match leading word only
+        if self.allowed_externals.contains(&leading) {
+            return Ok(());
+        }
+
+        // Blocked — find the most specific reason
+        let reason = self
+            .blocked_reasons
+            .get(&leading)
+            .cloned()
+            .unwrap_or_else(|| {
+                "This command is not in the approved shell policy. \
+                 Use the nushell toolbox tools for all workspace actions. \
+                 The shell tool is for read-only inspection only."
+                    .to_string()
+            });
+
+        Err(format!(
+            "Shell policy violation: `{leading}` is not permitted. {reason}"
+        ))
+    }
+
+    /// Render as a system prompt section so the model knows exactly what is available.
+    pub fn render_prompt_section(&self) -> String {
+        if self.allowed_externals.is_empty() && self.allowed_builtins.is_empty() {
+            return String::new();
+        }
+
+        let mut out = String::from("## Shell Tool Policy\n\n");
+        out.push_str(
+            "The `shell` tool is for **read-only inspection only**. \
+             It may not be used to compile, write files, run tests, mutate the \
+             filesystem, or invoke interpreters. All workspace actions go through \
+             the approved nushell toolbox.\n\n",
+        );
+
+        if !self.allowed_externals.is_empty() {
+            out.push_str("**Allowed external commands:**\n");
+            let mut sorted = self.allowed_externals.clone();
+            sorted.sort();
+            out.push_str(&sorted.join(", "));
+            out.push_str("\n\n");
+        }
+
+        out.push_str(
+            "**Allowed nushell builtins:** all `filters`, `strings`, `math`, \
+             `formats`, `path`, `date`, `conversions`, `hash`, `generators` categories; \
+             `core` keywords and control flow; `ls`, `open`, `glob`, `du` (read-only); \
+             `ps`, `sys`, `which`, `complete`, `uname`, `whoami`.\n\n",
+        );
+
+        out.push_str(
+            "**Blocked:** `save`, `rm`, `mkdir`, `mv`, `cp`, `touch`, `cd`, \
+             `run-external`, `exec`, `source`, `http *`, `job *`, `stor *`, \
+             `config *`, `overlay *`, `plugin *`, and all compiler/toolchain/VCS \
+             externals. Violations return a policy error — use the toolbox instead.\n",
+        );
+
+        out
+    }
+}
+
 // ── Toolbox update messages ───────────────────────────────────────────────────
 
 /// Sent from ToolboxActor to OrchestratorActor when toolbox state changes.
 #[derive(Debug, Clone)]
 pub struct ToolboxUpdate {
-    pub tool_registry: ToolRegistry,
+    pub tool_registry:     ToolRegistry,
     pub playbook_registry: PlaybookRegistry,
-    pub skills: String,
-    pub preflight: Option<PreflightResult>,
-    pub current_step: Option<PlaybookStep>,
+    pub skills:            String,
+    pub preflight:         Option<PreflightResult>,
+    pub current_step:      Option<PlaybookStep>,
+    pub shell_policy:      ShellPolicy,          // ← new
 }

@@ -27,7 +27,8 @@ def main [
     # Parse [[test]] entries from Cargo.toml
     let cargo_toml_declares = if ($cargo_toml | path exists) {
         try {
-            open $cargo_toml
+            open --raw $cargo_toml
+            | from toml
             | get test?
             | default []
             | each {|t| $t.name? | default "unnamed"}
@@ -61,7 +62,7 @@ def main [
             | where type == "file"
             | where name =~ '\.rs$'
             | each {|f|
-                let content = (open $f.name)
+                let content = (open --raw $f.name)
                 let test_names = (
                     $content
                     | lines

@@ -116,9 +116,9 @@ pub mod builtins {
                     arg_type: "string".into(),
                 }],
                 examples: vec![
-                    r#"{"type":"shell","command":"ls | where size > 1mb | get name"}"#.into(),
-                    r#"{"type":"shell","command":"cargo test 2>&1 | lines | last 20"}"#.into(),
-                    r#"{"type":"shell","command":"open Cargo.toml | get package.version"}"#.into(),
+                    r#"{"type":"shell","command":"rg 'impl Actor' /workspace/crates --type rust | lines"}"#.into(),
+                    r#"{"type":"shell","command":"ls /workspace/crates | get name"}"#.into(),
+                    r#"{"type":"shell","command":"open --raw Cargo.toml | from toml | get workspace.members"}"#.into(),
                 ],
             }],
         }

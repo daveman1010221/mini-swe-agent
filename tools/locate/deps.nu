@@ -23,7 +23,7 @@ def main [
         return { ok: false, data: null, error: $"Cargo.toml not found at: ($cargo_toml_path)" }
     }
 
-    let toml = (open $cargo_toml_path)
+    let toml = (open --raw $cargo_toml_path | from toml)
 
     # Find workspace root by walking up
     let workspace_root = (
@@ -41,7 +41,8 @@ def main [
         let ws_toml = ($workspace_root | path join "Cargo.toml")
         if ($ws_toml | path exists) {
             try {
-                open $ws_toml
+                open --raw $ws_toml
+                | from toml
                 | get workspace.dependencies?
                 | default {}
                 | columns

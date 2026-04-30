@@ -14,4 +14,4 @@ pub use event::{Event, EventKind};
 pub use capability::{Capability, CommandCapability, CapabilityMap};
 pub use message::{Message, Role};
 pub use config::{RunConfig, TaskFile, CurrentTask, TaskRules};
-pub use toolbox::{ToolRegistry, PlaybookRegistry, PreflightResult, ToolboxUpdate};
+pub use toolbox::{ToolRegistry, PlaybookRegistry, PreflightResult, ToolboxUpdate, ShellPolicy};
