@@ -179,6 +179,15 @@ impl NushellSession {
     pub fn engine(&self) -> Arc<EngineState> {
         self.engine.clone()
     }
+
+    /// Evaluate a nushell record file and return the resulting Value.
+    /// Used by ToolboxActor to parse playbook files without subprocess overhead.
+    pub fn parse_record_file(&mut self, path: &std::path::Path) -> anyhow::Result<nu_protocol::Value> {
+        let content = std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read {}: {e}", path.display()))?;
+        let (value, _) = self.eval_ephemeral(&content)?;
+        Ok(value)
+    }
 }
 
 fn create_engine(cwd: &str) -> Result<EngineState> {

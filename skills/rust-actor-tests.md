@@ -202,12 +202,9 @@ fn test_my_type_serde_roundtrip() {
 ```rust
 #[test]
 fn test_my_type_rkyv_roundtrip() {
-    let original = GitScheduleChange::Create {
-        path: "test.dhall".to_string(),
-        json: "{}".to_string(),
-    };
+    let original = MyType::Variant { field: "value".to_string() };
     let bytes = rkyv::to_bytes::<rkyv::rancor::Error>(&original).unwrap();
-    let decoded = rkyv::from_bytes::<GitScheduleChange, rkyv::rancor::Error>(&bytes).unwrap();
+    let decoded = rkyv::from_bytes::<MyType, rkyv::rancor::Error>(&bytes).unwrap();
     assert_eq!(original, decoded);
 }
 ```

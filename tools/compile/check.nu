@@ -6,12 +6,13 @@
 # Errors are structured records, not raw compiler output.
 #
 # Usage:
-#   nu tools/compile/check.nu --workspace-root /workspace/src/agents --crate cassini-types
-#   nu tools/compile/check.nu --workspace-root /workspace/src/agents --crate cassini-broker
+#   nu tools/compile/check.nu --workspace-root /workspace --crate mswea-core
+#   nu tools/compile/check.nu --workspace-root /workspace --crate mswea-core --tests
 
 def main [
     --workspace-root: path,  # path to cargo workspace root
     --crate: string,         # crate name e.g. "cassini-broker"
+    --tests,                 # also check test binaries (cargo check --tests)
 ] {
     if ($workspace_root | is-empty) {
         return { ok: false, data: null, error: "missing required flag: --workspace-root" }
@@ -28,7 +29,7 @@ def main [
     # Run cargo check with JSON message format for structured output
     let result = (
         try {
-            cargo check --package $crate --message-format json | complete
+            cargo check --package $crate ...(if $tests { ["--tests"] } else { [] }) --message-format json | complete
         } catch {|err|
             return { ok: false, data: null, error: $"failed to run cargo check: ($err.msg)" }
         }

@@ -42,7 +42,6 @@ use mswea_core::{
 
 use crate::event_bus::EventBus;
 use crate::orchestrator::OrchestratorMsg;
-use tokio::sync::RwLock as AsyncRwLock;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
@@ -81,11 +80,11 @@ pub struct ToolboxState {
     mswea_root: PathBuf,
     shell: Arc<RwLock<environments::ShellWorker>>,
     tool_registry: ToolRegistry,
-    shared_tool_registry: Arc<AsyncRwLock<ToolRegistry>>,
+    shared_tool_registry: Arc<RwLock<ToolRegistry>>,
     playbook_registry: PlaybookRegistry,
     skills: String,
     shell_policy: ShellPolicy,
-    shared_shell_policy: Arc<AsyncRwLock<ShellPolicy>>,
+    shared_shell_policy: Arc<RwLock<ShellPolicy>>,
 }
 // ── Actor ─────────────────────────────────────────────────────────────────────
 
@@ -557,9 +556,9 @@ fn infer_ooda_phase(namespace: &str, _tool: &str) -> OodaPhase {
 
 // ── Playbook scanning ─────────────────────────────────────────────────────────
 
-/// Scan `tools/playbooks/` for .nu files and parse them as playbooks.
-/// For now we parse a minimal subset — task_type, version, description,
-/// step names. Full structured parse comes when we implement the registry tools.
+/// Scan `tools/playbooks/` for .nu files and parse them using the embedded
+/// nushell engine. Each file is evaluated as a nushell record and walked
+/// directly via nu_protocol::Value — no regex, no hardcoded stubs.
 fn scan_playbooks(playbook_dir: &Path) -> PlaybookRegistry {
     let mut registry = PlaybookRegistry::default();
 
@@ -567,6 +566,16 @@ fn scan_playbooks(playbook_dir: &Path) -> PlaybookRegistry {
         Ok(e) => e,
         Err(e) => {
             warn!(path = %playbook_dir.display(), error = %e, "ToolboxActor: cannot read playbooks dir");
+            return registry;
+        }
+    };
+
+    // Create a temporary session just for playbook parsing.
+    // Empty env is fine — playbooks are pure data records with no side effects.
+    let mut session = match environments::NushellSession::new("/workspace", &Default::default()) {
+        Ok(s) => s,
+        Err(e) => {
+            warn!(error = %e, "Failed to create NushellSession for playbook parsing — registry will be empty");
             return registry;
         }
     };
@@ -580,195 +589,126 @@ fn scan_playbooks(playbook_dir: &Path) -> PlaybookRegistry {
             None => continue,
         };
 
-        // Derive task_type from filename: "write-tests.nu" → "write-tests"
-        let task_type = file_stem.clone();
-
-        // Parse the playbook from the nushell record file.
-        // For now, build a stub from the filename — full parse TBD.
-        let playbook = parse_playbook_file(&path, &task_type);
-        registry.playbooks.insert(task_type, playbook);
+        match parse_playbook_file(&path, &file_stem, &mut session) {
+            Ok(playbook) => {
+                info!(task_type = %file_stem, steps = playbook.steps.len(), "Loaded playbook");
+                registry.playbooks.insert(file_stem, playbook);
+            }
+            Err(e) => {
+                warn!(path = %path.display(), error = %e, "Failed to parse playbook — skipping");
+            }
+        }
     }
 
     registry
 }
 
-/// Parse a playbook .nu file into a `Playbook` struct.
-/// Currently builds a minimal stub — full structured parse is a future task.
-fn parse_playbook_file(path: &Path, task_type: &str) -> Playbook {
-    // Read the file to extract what we can from comments and structure
-    let content = std::fs::read_to_string(path).unwrap_or_default();
+/// Parse a playbook .nu file by evaluating it as a nushell record
+/// and walking the resulting Value tree.
+fn parse_playbook_file(
+    path: &Path,
+    task_type: &str,
+    session: &mut environments::NushellSession,
+) -> anyhow::Result<Playbook> {
+    let value = session.parse_record_file(path)?;
 
-    // Extract description from the file header comment
-    let description = content
-        .lines()
-        .find(|l| l.starts_with("# Playbook for") || l.starts_with("# playbook/"))
-        .map(|l| l.trim_start_matches('#').trim().to_string())
+    let description = nu_str(&value, "description")
         .unwrap_or_else(|| format!("Playbook for {task_type}"));
+    let version = nu_str(&value, "version")
+        .unwrap_or_else(|| "1.0".to_string());
+    let success_condition = nu_str(&value, "success_condition")
+        .unwrap_or_default();
+    let preconditions = nu_str_list(&value, "preconditions");
 
-    // Build stub steps from known write-tests structure
-    // Full parse will come when we implement nu evaluation here
-    let steps = build_stub_steps(task_type);
+    let steps = nu_list(&value, "steps")
+        .into_iter()
+        .enumerate()
+        .filter_map(|(i, step_val)| parse_step_value(&step_val, i))
+        .collect();
 
-    Playbook {
-        task_type:         task_type.to_string(),
-        version:           "1.0".to_string(),
+    Ok(Playbook {
+        task_type: task_type.to_string(),
+        version,
         description,
-        success_condition: String::new(),
-        preconditions:     Vec::new(),
+        success_condition,
+        preconditions,
         steps,
-        source_path:       path.to_path_buf(),
-    }
+        source_path: path.to_path_buf(),
+    })
 }
 
-/// Build stub steps for known playbook types.
-/// This is temporary until we implement full nu record parsing.
-fn build_stub_steps(task_type: &str) -> Vec<PlaybookStep> {
-    match task_type {
-        "write-tests" => vec![
-            PlaybookStep {
-                name: "survey".into(),
-                index: 0,
-                description: "Understand the crate completely. Read only.".into(),
-                budget: 3,
-                on_budget_exhausted: "halt".into(),
-                approved_tools: vec![
-                    "locate/files".into(), "locate/actors".into(),
-                    "locate/symbols".into(), "locate/derives".into(),
-                    "locate/tests".into(), "compile/check".into(),
-                    "extract/cargo-toml".into(),
-                ],
-                forbidden_tools: vec!["create/*".into(), "task/advance".into()],
-                orient_questions: vec![
-                    "Is this an actor crate, a types crate, or both?".into(),
-                    "Which derive macros are present — serde? rkyv? both?".into(),
-                    "Do existing tests exist? How many and what do they cover?".into(),
-                    "Does compile/check pass cleanly right now?".into(),
-                    "Are there private fields that prevent struct literal construction?".into(),
-                ],
-                verification_gate: "compile/check passed. Crate structure understood.".into(),
-                notes: vec![],
-                automated: true,
-                automated_by: Some("ToolboxActor::preflight".into()),
-            },
-            PlaybookStep {
-                name: "orient".into(),
-                index: 1,
-                description: "Write the coverage plan. Document every decision.".into(),
-                budget: 2,
-                on_budget_exhausted: "halt".into(),
-                approved_tools: vec![
-                    "task/write-coverage-plan".into(),
-                    "task/state".into(),
-                    "meta/loop-detect".into(),
-                    "meta/orient-report".into(),
-                ],
-                forbidden_tools: vec![
-                    "locate/*".into(), "extract/*".into(), "create/*".into(),
-                    "compile/*".into(), "test/*".into(),
-                ],
-                orient_questions: vec![
-                    "What are all public interfaces that need tests?".into(),
-                    "Which types need serde roundtrip tests?".into(),
-                    "Which types need rkyv roundtrip tests?".into(),
-                    "Which actors need mailbox tests?".into(),
-                    "How many total tests are planned?".into(),
-                ],
-                verification_gate: "task/write-coverage-plan called. planned_count > 0.".into(),
-                notes: vec!["The coverage plan is a contract.".into()],
-                automated: false,
-                automated_by: None,
-            },
-            PlaybookStep {
-                name: "scaffold".into(),
-                index: 2,
-                description: "Create test infrastructure. No test bodies yet.".into(),
-                budget: 3,
-                on_budget_exhausted: "halt".into(),
-                approved_tools: vec![
-                    "create/tests-dir".into(), "create/test-file".into(),
-                    "create/cargo-test-entry".into(), "create/dev-dep".into(),
-                    "compile/check".into(),
-                ],
-                forbidden_tools: vec!["test/*".into(), "task/advance".into()],
-                orient_questions: vec![
-                    "Does tests/ directory exist?".into(),
-                    "Does Cargo.toml declare all required [[test]] entries?".into(),
-                    "Do the empty test files compile cleanly?".into(),
-                ],
-                verification_gate: "compile/check passes on scaffolded files.".into(),
-                notes: vec![],
-                automated: false,
-                automated_by: None,
-            },
-            PlaybookStep {
-                name: "write".into(),
-                index: 3,
-                description: "Write test bodies. One test at a time. compile/check after each.".into(),
-                budget: 5,
-                on_budget_exhausted: "halt".into(),
-                approved_tools: vec![
-                    "extract/file".into(), "extract/range".into(),
-                    "extract/symbol".into(), "extract/actor".into(),
-                    "compile/check".into(), "compile/fix-hint".into(),
-                ],
-                forbidden_tools: vec!["test/*".into(), "task/advance".into()],
-                orient_questions: vec![
-                    "How many planned tests written so far? How many remain?".into(),
-                    "Does the last written test compile cleanly?".into(),
-                    "Has loop-detect flagged any repeated compile errors?".into(),
-                ],
-                verification_gate: "compile/check passes. All coverage plan tests written.".into(),
-                notes: vec![
-                    "One test at a time. compile/check after each.".into(),
-                    "Never rewrite a file to fix a compile error.".into(),
-                ],
-                automated: false,
-                automated_by: None,
-            },
-            PlaybookStep {
-                name: "verify".into(),
-                index: 4,
-                description: "Run tests. Zero failures required.".into(),
-                budget: 3,
-                on_budget_exhausted: "halt".into(),
-                approved_tools: vec![
-                    "test/run".into(), "test/count".into(),
-                    "test/verify-coverage".into(), "compile/check".into(),
-                ],
-                forbidden_tools: vec!["create/*".into(), "task/advance".into()],
-                orient_questions: vec![
-                    "How many tests passed? How many failed?".into(),
-                    "Is failed == 0?".into(),
-                    "Is gate_passed == true from verify-coverage?".into(),
-                ],
-                verification_gate: "test/run: failed == 0. gate_passed == true.".into(),
-                notes: vec!["Never advance if failed > 0.".into()],
-                automated: false,
-                automated_by: None,
-            },
-            PlaybookStep {
-                name: "finalize".into(),
-                index: 5,
-                description: "Format, final checks, advance task state.".into(),
-                budget: 2,
-                on_budget_exhausted: "halt".into(),
-                approved_tools: vec![
-                    "fmt/apply".into(), "fmt/check".into(),
-                    "compile/check".into(), "test/run".into(),
-                    "task/advance".into(),
-                ],
-                forbidden_tools: vec!["create/*".into(), "task/halt".into()],
-                orient_questions: vec![
-                    "Does fmt/check show unformatted files?".into(),
-                    "Does test/run still show zero failures after fmt?".into(),
-                ],
-                verification_gate: "fmt/apply done. compile/check clean. task/advance called.".into(),
-                notes: vec!["task/advance is the LAST call. Not the first.".into()],
-                automated: false,
-                automated_by: None,
-            },
-        ],
-        _ => Vec::new(),
+/// Parse a single step Value into a PlaybookStep.
+fn parse_step_value(value: &nu_protocol::Value, index: usize) -> Option<PlaybookStep> {
+    let name = nu_str(value, "name")?;
+    let description = nu_str(value, "description").unwrap_or_default();
+    let verification_gate = nu_str(value, "verification_gate").unwrap_or_default();
+    let on_budget_exhausted = nu_str(value, "on_budget_exhausted")
+        .unwrap_or_else(|| "halt".to_string());
+    let budget = nu_int(value, "budget").unwrap_or(3) as u32;
+    let approved_tools = nu_str_list(value, "approved_tools");
+    let forbidden_tools = nu_str_list(value, "forbidden_tools");
+    let orient_questions = nu_str_list(value, "orient_questions");
+    let notes = nu_notes(value);
+
+    let automated = name == "survey";
+    let automated_by = if automated {
+        Some("ToolboxActor::preflight".to_string())
+    } else {
+        None
+    };
+
+    Some(PlaybookStep {
+        name,
+        index,
+        description,
+        budget,
+        on_budget_exhausted,
+        approved_tools,
+        forbidden_tools,
+        orient_questions,
+        verification_gate,
+        notes,
+        automated,
+        automated_by,
+    })
+}
+
+// ── nu_protocol::Value helpers ────────────────────────────────────────────────
+
+fn nu_str(value: &nu_protocol::Value, key: &str) -> Option<String> {
+    let record = value.as_record().ok()?;
+    record.get(key)?.as_str().ok().map(|s| s.to_string())
+}
+
+fn nu_int(value: &nu_protocol::Value, key: &str) -> Option<i64> {
+    let record = value.as_record().ok()?;
+    record.get(key)?.as_int().ok()
+}
+
+fn nu_list(value: &nu_protocol::Value, key: &str) -> Vec<nu_protocol::Value> {
+    let Ok(record) = value.as_record() else { return Vec::new() };
+    let Some(val) = record.get(key) else { return Vec::new() };
+    val.as_list().ok().map(|l| l.to_vec()).unwrap_or_default()
+}
+
+fn nu_str_list(value: &nu_protocol::Value, key: &str) -> Vec<String> {
+    nu_list(value, key)
+        .into_iter()
+        .filter_map(|v| v.as_str().ok().map(|s| s.to_string()))
+        .collect()
+}
+
+/// Extract notes — handles both single string and list of strings.
+fn nu_notes(value: &nu_protocol::Value) -> Vec<String> {
+    let Ok(record) = value.as_record() else { return Vec::new() };
+    let Some(val) = record.get("notes") else { return Vec::new() };
+    match val.as_list() {
+        Ok(list) => list.iter()
+            .filter_map(|v| v.as_str().ok().map(|s| s.to_string()))
+            .collect(),
+        Err(_) => val.as_str().ok()
+            .map(|s| vec![s.to_string()])
+            .unwrap_or_default(),
     }
 }
 
