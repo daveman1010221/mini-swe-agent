@@ -36,7 +36,7 @@ def main [
     )
 
     # cargo itself failed (e.g. unknown package) — surface the error
-    if $result.exit_code == 101 {
+    if $result.exit_code == 101 and ($result.stdout | str length) == 0 {
         return { ok: false, data: null, error: $"cargo check failed: ($result.stderr | str trim)" }
     }
 
