@@ -7,7 +7,7 @@ pub mod message;
 pub mod config;
 pub mod toolbox;
 
-pub use error::AgentError;
+pub use error::{AgentError, ExitStatus};
 pub use tool_call::ToolCall;
 pub use observation::Observation;
 pub use event::{Event, EventKind};

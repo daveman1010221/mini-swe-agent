@@ -268,3 +268,57 @@ Never use an exact test count as a success condition. Instead:
 - Count existing tests first with grep -c
 - Run cargo test and verify zero failures
 - Confirm new tests appear in the output with ok status
+
+## Integration test imports — always use the crate name, never `crate::`
+
+Files under `tests/` are separate binaries. Inside them, `crate` refers to
+the test binary itself, not the library being tested. Always import from the
+library by name:
+
+```rust
+// WRONG — crate:: resolves to the test binary, not mswea-core
+use crate::ExitStatus;
+
+// CORRECT
+use mswea_core::ExitStatus;
+```
+
+This applies to every `use` statement in `tests/unit.rs` and `tests/props.rs`.
+
+## Check derives before writing any test for a type
+
+Before writing a serde roundtrip test, verify the type actually derives
+`Serialize`, `Deserialize`, and `PartialEq`:
+
+```bash
+rg -n '#\[derive' crates/core/src/error.rs
+```
+
+If `Serialize` is absent — skip serde roundtrip for that type.
+If `Deserialize` is absent — skip serde roundtrip for that type.
+If `PartialEq` is absent — do not use `assert_eq!` on decoded values.
+Instead compare via serialization:
+
+```rust
+assert_eq!(
+    serde_json::to_string(&original).unwrap(),
+    serde_json::to_string(&decoded).unwrap()
+);
+```
+
+`AgentError` is a `thiserror` error type — it intentionally has no serde
+derives and no `PartialEq`. Do NOT write serde roundtrip tests for it.
+Write tests only for `ExitStatus`, which has full derives.
+
+## Check field types before constructing variants
+
+Before constructing a variant with named fields, read the struct/enum
+definition to verify field types:
+
+```bash
+rg -n -A5 'VariantName' crates/core/src/error.rs
+```
+
+`AgentError::Serialization` has `source: serde_json::Error` — you cannot
+construct it with `Value::Null`. Only variants with simple field types
+(String, u32, f64, bool) can be constructed inline in tests.

@@ -98,6 +98,7 @@ Skipping record-attempt is a protocol violation.
 - If compile/check fails, fix the error before writing the next test.
 - Never write a second test until the first one compiles clean.
 - A write: call that creates more than one #[test] function is a protocol violation.
+- ONE TEST PER ACT. Writing more than one #[test] function in a single write: call is a HARD RULE violation. The ENTIRE file will be discarded and you will lose all progress. Write one test, compile/check --tests, fix errors, then write the next test.
 
 **submit** is only valid after task/advance has been called in the finalize step.
 Do not submit before all tests are written and passing.

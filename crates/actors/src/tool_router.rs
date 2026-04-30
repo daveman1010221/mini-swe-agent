@@ -177,6 +177,24 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
         }
 
         ToolCall::Write { path, content } => {
+            // Enforce one-test-at-a-time HARD RULE for test files
+            if path.contains("/tests/") && path.ends_with(".rs") {
+                let test_count = content.matches("#[test]").count();
+                if test_count > 1 {
+                    return Observation::Error {
+                        message: format!(
+                            "ONE TEST PER WRITE violation: content contains {} #[test] functions. \
+                             Write exactly one #[test] function per write: call, then run \
+                             compile/check with tests:true before writing the next test. \
+                             The write was rejected — no file was modified.",
+                            test_count
+                        ),
+                        exit_code: Some(1),
+                        tool_call_summary: format!("write[rejected]: {path}"),
+                    };
+                }
+            }
+
             match write_file(path, content) {
                 Ok(obs) => {
                     if let Observation::FileWritten { lines_changed, .. } = &obs {
