@@ -83,7 +83,7 @@
       on_budget_exhausted: "halt",
 
       approved_tools: [
-        "task/write-coverage-plan",
+        "task/write-coverage-plan", "task/advance",
         "task/state", "meta/loop-detect", "meta/trajectory-summary",
         "meta/orient-report", "playbook/current-step", "tools/check-approved"
       ],
@@ -91,7 +91,7 @@
       forbidden_tools: [
         "locate/*", "extract/*", "create/*",
         "compile/*", "test/*", "fmt/*", "lint/*",
-        "task/advance", "task/halt", "task/block"
+        "task/halt", "task/block"
       ],
 
       orient_questions: [
