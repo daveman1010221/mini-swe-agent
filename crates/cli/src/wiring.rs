@@ -76,28 +76,28 @@ pub async fn boot_actor_system(
         None
     };
 
-    // ── ConstraintCheckerActor ───────────────────────────────────────────────────
-    let _tool_registry_for_normalizer = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
-    let tool_registry_for_checker = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
+    // ── Shared state ─────────────────────────────────────────────────────────
+    // One registry shared across all actors — ToolboxActor writes, policy
+    // actors and ToolRouterActor read.
+    let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
 
+    // ── ConstraintCheckerActor ────────────────────────────────────────────────
     let (constraint_checker_ref, _cc_handle) = Actor::spawn(
         Some("constraint-checker".into()),
         ConstraintCheckerActor,
         ConstraintCheckerArgs {
-            tool_registry: Arc::clone(&tool_registry_for_checker),
+            tool_registry: Arc::clone(&tool_registry),
         },
     )
     .await
     .context("Spawning ConstraintCheckerActor")?;
 
-    // ── ArgNormalizerActor ───────────────────────────────────────────────────
-    let tool_registry_for_normalizer = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
-
+    // ── ArgNormalizerActor ────────────────────────────────────────────────────
     let (arg_normalizer_ref, _norm_handle) = Actor::spawn(
         Some("arg-normalizer".into()),
         ArgNormalizerActor,
         ArgNormalizerArgs {
-            tool_registry: Arc::clone(&tool_registry_for_normalizer),
+            tool_registry: Arc::clone(&tool_registry),
         },
     )
     .await
@@ -137,7 +137,6 @@ pub async fn boot_actor_system(
     }
 
     // ── ToolboxActor ─────────────────────────────────────────────────────────
-    // Shared tool registry — ToolboxActor writes, ToolRouterActor reads.
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
 
     let shell_policy = Arc::new(AsyncRwLock::new(ShellPolicy::default()));
@@ -185,7 +184,7 @@ pub async fn boot_actor_system(
             shell,
             event_bus: Arc::clone(&event_bus),
             cwd: config.shell.cwd.clone(),
-            tool_registry,
+            tool_registry: Arc::clone(&tool_registry),
             shell_policy: Arc::clone(&shell_policy),
         },
     )

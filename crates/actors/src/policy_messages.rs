@@ -41,7 +41,6 @@ impl std::fmt::Debug for NormalizeRequest {
 /// their verdicts into a single PipelineResult.
 pub struct ConstraintRequest {
     pub normalized: NormalizedToolCall,
-    pub context: PolicyContext,
     pub step: u32,
     pub reply: RpcReplyPort<PipelineResult>,
 }

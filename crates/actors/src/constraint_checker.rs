@@ -71,7 +71,12 @@ impl Actor for ConstraintCheckerActor {
     ) -> Result<(), ActorProcessingErr> {
         match msg {
             ConstraintCheckerMsg::Check(req) => {
-                let result = check(&req.normalized.call, &req.context, &req.normalized.feedback, &state.tool_registry).await;
+                let result = check(
+                    &req.normalized.call,
+                    &state.context,
+                    &req.normalized.feedback,
+                    &state.tool_registry,
+                ).await;
                 let _ = req.reply.send(result);
             }
             ConstraintCheckerMsg::UpdateContext(update) => {

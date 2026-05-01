@@ -259,7 +259,6 @@ async fn agent_loop(
             system.constraint_checker,
             |reply| ConstraintCheckerMsg::Check(ConstraintRequest {
                 normalized: normalized.clone(),
-                context: mswea_core::policy::PolicyContext::initial(),
                 step,
                 reply,
             }),
