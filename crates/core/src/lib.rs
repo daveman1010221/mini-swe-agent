@@ -15,3 +15,10 @@ pub use capability::{Capability, CommandCapability, CapabilityMap};
 pub use message::{Message, Role};
 pub use config::{RunConfig, TaskFile, CurrentTask, TaskRules, AgentConfig, ModelConfig, ShellConfig, RunMeta, ModelBackend};
 pub use toolbox::{ToolRegistry, PlaybookRegistry, PreflightResult, ToolboxUpdate, ShellPolicy};
+
+pub mod policy;
+pub use policy::{
+    FeedbackNote, FeedbackSeverity, NormalizedToolCall,
+    PolicyContext, PolicyVerdict, PipelineResult,
+    LastCompileCheck, LastTestWrite,
+};

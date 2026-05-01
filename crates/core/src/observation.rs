@@ -17,6 +17,7 @@ pub enum Observation {
     Structured {
         value: nu_protocol::Value,
         exit_code: i64,
+        feedback: Option<String>,  // coaching note from tool layer
     },
     /// Result of `ToolCall::Read`.
     FileContent {
@@ -25,7 +26,11 @@ pub enum Observation {
         size_bytes: usize,
     },
     /// Result of `ToolCall::Edit` or `ToolCall::Write`.
-    FileWritten { path: String, lines_changed: i64 },
+    FileWritten {
+        path: String,
+        lines_changed: i64,
+        feedback: Option<String>,
+    },
     /// Result of `ToolCall::Search`.
     SearchResults {
         matches: Vec<SearchMatch>,
@@ -54,10 +59,16 @@ impl Observation {
     /// This is the only place `nu_protocol::Value` → JSON conversion occurs.
     pub fn to_llm_content(&self) -> serde_json::Value {
         match self {
-            Self::Structured { value, exit_code } => serde_json::json!({
-                "exit_code": exit_code,
-                "output": nu_value_to_json(value),
-            }),
+            Self::Structured { value, exit_code, feedback } => {
+                let mut json = serde_json::json!({
+                    "exit_code": exit_code,
+                    "output": nu_value_to_json(value),
+                });
+                if let Some(note) = feedback {
+                    json["feedback"] = serde_json::json!(note);
+                }
+                json
+            },
             Self::FileContent {
                 path,
                 content,
@@ -67,14 +78,17 @@ impl Observation {
                 "content": content,
                 "size_bytes": size_bytes,
             }),
-            Self::FileWritten {
-                path,
-                lines_changed,
-            } => serde_json::json!({
-                "path": path.to_string(),
-                "lines_changed": lines_changed,
-                "status": "ok",
-            }),
+            Self::FileWritten { path, lines_changed, feedback } => {
+                let mut json = serde_json::json!({
+                    "path": path.to_string(),
+                    "lines_changed": lines_changed,
+                    "status": "ok",
+                });
+                if let Some(note) = feedback {
+                    json["feedback"] = serde_json::json!(note);
+                }
+                json
+            },
             Self::SearchResults { matches, query } => serde_json::json!({
                 "query": query,
                 "match_count": matches.len(),
@@ -100,9 +114,10 @@ impl Observation {
     /// Convert to the rkyv-archivable mirror type for trajectory storage.
     pub fn to_archive(&self) -> ObservationArchive {
         match self {
-            Self::Structured { value, exit_code } => ObservationArchive::Structured {
+            Self::Structured { value, exit_code, feedback } => ObservationArchive::Structured {
                 value_json: nu_value_to_json(value).to_string(),
                 exit_code: *exit_code,
+                feedback: feedback.clone(),
             },
             Self::FileContent {
                 path,
@@ -113,12 +128,10 @@ impl Observation {
                 content: content.clone(),
                 size_bytes: *size_bytes,
             },
-            Self::FileWritten {
-                path,
-                lines_changed,
-            } => ObservationArchive::FileWritten {
+            Self::FileWritten { path, lines_changed, feedback } => ObservationArchive::FileWritten {
                 path: path.to_string(),
                 lines_changed: *lines_changed,
+                feedback: feedback.clone(),
             },
             Self::SearchResults { matches, query } => ObservationArchive::SearchResults {
                 matches: matches.clone(),
@@ -146,6 +159,7 @@ pub enum ObservationArchive {
     Structured {
         value_json: String,
         exit_code: i64,
+        feedback: Option<String>,  // coaching note from tool layer
     },
     FileContent {
         path: String,
@@ -155,6 +169,7 @@ pub enum ObservationArchive {
     FileWritten {
         path: String,
         lines_changed: i64,
+        feedback: Option<String>,
     },
     SearchResults {
         matches: Vec<SearchMatch>,

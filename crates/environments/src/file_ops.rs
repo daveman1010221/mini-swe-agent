@@ -52,6 +52,7 @@ pub fn write_file(path: &str, content: &str) -> Result<Observation> {
     Ok(Observation::FileWritten {
         path: path.to_string(),
         lines_changed,
+        feedback: None,
     })
 }
 
@@ -84,6 +85,7 @@ pub fn edit_file(path: &str, old: &str, new: &str) -> Result<Observation> {
     Ok(Observation::FileWritten {
         path: path.to_string(),
         lines_changed,
+        feedback: None,
     })
 }
 

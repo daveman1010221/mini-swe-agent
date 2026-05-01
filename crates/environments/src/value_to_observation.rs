@@ -8,5 +8,5 @@ use mswea_core::observation::Observation;
 use nu_protocol::Value;
 
 pub fn value_to_observation(value: Value, exit_code: i64) -> Observation {
-    Observation::Structured { value, exit_code }
+    Observation::Structured { value, exit_code, feedback: None }
 }

@@ -264,6 +264,7 @@ async fn dispatch_nushell_tool(
     state: &ToolRouterState,
 ) -> Observation {
     let full_name = format!("{namespace}/{tool}");
+    let mut coerced_flags: Vec<String> = Vec::new();
 
     // Look up the script path and flags from the tool registry
     let (script_path, tool_flags) = {
@@ -290,7 +291,14 @@ async fn dispatch_nushell_tool(
             match tool_flags.iter().find(|f| f.name == flag_name) {
                 Some(flag) if flag.flag_type == "bool" => {
                     if let serde_json::Value::String(s) = val {
-                        if s != "true" && s != "false" {
+                        if s == "true" || s == "false" {
+                            // Coerce silently — feedback will be attached to result
+                            coerced_flags.push(format!(
+                                "--{flag_name} was passed as string \"{s}\" — auto-converted to boolean. \
+                                 Pass boolean flags as true (not \"true\") in future calls."
+                            ));
+                        } else {
+                            // Genuinely bad value — still error
                             let usage = tool_flags.iter()
                                 .map(|f| f.render_signature())
                                 .collect::<Vec<_>>()
@@ -360,6 +368,16 @@ async fn dispatch_nushell_tool(
                         structured: true,
                     },
                 ));
+            }
+            // Attach any coercion feedback to structured observations
+            if !coerced_flags.is_empty() {
+                if let Observation::Structured { value, exit_code, .. } = obs {
+                    return Observation::Structured {
+                        value,
+                        exit_code,
+                        feedback: Some(coerced_flags.join(" | ")),
+                    };
+                }
             }
             obs
         }
