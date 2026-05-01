@@ -23,6 +23,9 @@ use mswea_core::{
 };
 
 use crate::event_bus::EventBus;
+use crate::constraint_checker::ConstraintCheckerMsg;
+use crate::policy_messages::PolicyContextUpdate;
+use mswea_core::policy::PolicyContext;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
@@ -43,6 +46,7 @@ pub struct OrchestratorArgs {
     pub output_path: String,
     pub rules_section: String,
     pub skills_section: String,
+    pub constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -59,6 +63,7 @@ pub struct OrchestratorState {
     ooda_section: String,
     env: Environment<'static>,
     shell_policy_section: String,
+    constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -94,6 +99,7 @@ impl Actor for OrchestratorActor {
             toolbox_section: String::new(),
             ooda_section: String::new(),
             shell_policy_section: String::new(),
+            constraint_checker: args.constraint_checker,
             env,
         })
     }
@@ -147,6 +153,26 @@ impl Actor for OrchestratorActor {
                 );
 
                 state.shell_policy_section = update.shell_policy.render_prompt_section();
+
+                if let Some(ref cc) = state.constraint_checker {
+                    if let Some(ref step) = update.current_step {
+                        let ctx = PolicyContext {
+                            step: 0,
+                            playbook_step: step.name.clone(),
+                            playbook_index: step.index as u32,
+                            approved_tools: step.approved_tools.clone(),
+                            forbidden_tools: step.forbidden_tools.clone(),
+                            last_tool_call: None,
+                            last_tool_step: None,
+                            last_compile_check: None,
+                            last_test_write: None,
+                        };
+                        let _ = ractor::call!(
+                            cc,
+                            |reply| ConstraintCheckerMsg::UpdateContext(PolicyContextUpdate { context: ctx, reply })
+                        );
+                    }
+                }
 
                 regenerate_prompt(state);
             }

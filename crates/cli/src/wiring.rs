@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use actors::{
     new_event_bus, register_builtins, EventBus, EventLoggerActor, EventLoggerArgs,
     OrchestratorActor, OrchestratorArgs, ToolboxActor, ToolboxArgs, ToolboxMsg,
-    ToolRouterActor, ToolRouterArgs,
+    ToolRouterActor, ToolRouterArgs, ConstraintCheckerActor, ConstraintCheckerArgs,
 };
 use environments::ShellWorker;
 use models::{LitellmClient, ModelActor};
@@ -71,6 +71,20 @@ pub async fn boot_actor_system(
         None
     };
 
+    // ── ConstraintCheckerActor ───────────────────────────────────────────────────
+    let _tool_registry_for_normalizer = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
+    let tool_registry_for_checker = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
+
+    let (constraint_checker_ref, _cc_handle) = Actor::spawn(
+        Some("constraint-checker".into()),
+        ConstraintCheckerActor,
+        ConstraintCheckerArgs {
+            tool_registry: Arc::clone(&tool_registry_for_checker),
+        },
+    )
+    .await
+    .context("Spawning ConstraintCheckerActor")?;
+
     // ── OrchestratorActor ────────────────────────────────────────────────────
     let system_prompt = Arc::new(RwLock::new(String::new()));
 
@@ -82,12 +96,13 @@ pub async fn boot_actor_system(
         Some("orchestrator".into()),
         OrchestratorActor,
         OrchestratorArgs {
-            event_bus:     Arc::clone(&event_bus),
-            system_prompt: Arc::clone(&system_prompt),
-            cwd:           config.shell.cwd.clone(),
-            output_path:   format!("{output_path}.jsonl"),
+            event_bus:          Arc::clone(&event_bus),
+            system_prompt:      Arc::clone(&system_prompt),
+            cwd:                config.shell.cwd.clone(),
+            output_path:        format!("{output_path}.jsonl"),
             rules_section,
             skills_section,
+            constraint_checker: Some(constraint_checker_ref),
         },
     )
     .await

@@ -59,7 +59,8 @@ impl std::fmt::Debug for ConstraintRequest {
 
 /// Broadcast from OrchestratorActor whenever playbook state changes.
 /// All policy actors receive this and update their cached context.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PolicyContextUpdate {
     pub context: PolicyContext,
+    pub reply: RpcReplyPort<()>,
 }

@@ -79,6 +79,7 @@ impl Actor for ConstraintCheckerActor {
                     step = %state.context.playbook_step,
                     "ConstraintCheckerActor: context updated"
                 );
+                let _ = update.reply.send(());
             }
         }
         Ok(())
