@@ -177,24 +177,6 @@ async fn dispatch(call: &ToolCall, step: u32, state: &ToolRouterState) -> Observ
         }
 
         ToolCall::Write { path, content } => {
-            // Enforce one-test-at-a-time HARD RULE for test files
-            if path.contains("/tests/") && path.ends_with(".rs") {
-                let test_count = content.matches("#[test]").count();
-                if test_count > 1 {
-                    return Observation::Error {
-                        message: format!(
-                            "ONE TEST PER WRITE violation: content contains {} #[test] functions. \
-                             Write exactly one #[test] function per write: call, then run \
-                             compile/check with tests:true before writing the next test. \
-                             The write was rejected — no file was modified.",
-                            test_count
-                        ),
-                        exit_code: Some(1),
-                        tool_call_summary: format!("write[rejected]: {path}"),
-                    };
-                }
-            }
-
             match write_file(path, content) {
                 Ok(obs) => {
                     if let Observation::FileWritten { lines_changed, .. } = &obs {
@@ -264,7 +246,6 @@ async fn dispatch_nushell_tool(
     state: &ToolRouterState,
 ) -> Observation {
     let full_name = format!("{namespace}/{tool}");
-    let mut coerced_flags: Vec<String> = Vec::new();
 
     // Look up the script path and flags from the tool registry
     let (script_path, tool_flags) = {
@@ -286,32 +267,11 @@ async fn dispatch_nushell_tool(
 
     // Validate args against known flags before invoking nushell
     if let Some(obj) = args.as_object() {
-        for (key, val) in obj {
+        for (key, _val) in obj {
             let flag_name = key.replace('_', "-");
             match tool_flags.iter().find(|f| f.name == flag_name) {
-                Some(flag) if flag.flag_type == "bool" => {
-                    if let serde_json::Value::String(s) = val {
-                        if s == "true" || s == "false" {
-                            // Coerce silently — feedback will be attached to result
-                            coerced_flags.push(format!(
-                                "--{flag_name} was passed as string \"{s}\" — auto-converted to boolean. \
-                                 Pass boolean flags as true (not \"true\") in future calls."
-                            ));
-                        } else {
-                            // Genuinely bad value — still error
-                            let usage = tool_flags.iter()
-                                .map(|f| f.render_signature())
-                                .collect::<Vec<_>>()
-                                .join(" ");
-                            return Observation::Error {
-                                message: format!(
-                                    "Bad arg for {full_name}: --{flag_name} is a boolean switch, got string \"{s}\". Usage: {full_name} {usage}"
-                                ),
-                                exit_code: Some(1),
-                                tool_call_summary: full_name,
-                            };
-                        }
-                    }
+                Some(_) => {
+                    // Valid flag — ArgNormalizerActor handles type coercion upstream
                 }
                 None => {
                     let usage = tool_flags.iter()
@@ -326,7 +286,6 @@ async fn dispatch_nushell_tool(
                         tool_call_summary: full_name,
                     };
                 }
-                _ => {}
             }
         }
     }
@@ -368,16 +327,6 @@ async fn dispatch_nushell_tool(
                         structured: true,
                     },
                 ));
-            }
-            // Attach any coercion feedback to structured observations
-            if !coerced_flags.is_empty() {
-                if let Observation::Structured { value, exit_code, .. } = obs {
-                    return Observation::Structured {
-                        value,
-                        exit_code,
-                        feedback: Some(coerced_flags.join(" | ")),
-                    };
-                }
             }
             obs
         }
