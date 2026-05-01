@@ -131,6 +131,11 @@ impl Actor for ToolboxActor {
             preflight:         None,
             current_step:      None,
             shell_policy:      shell_policy.clone(),
+            global_approved_tools: playbook_registry
+                .playbooks
+                .values()
+                .flat_map(|p| p.global_approved_tools.clone())
+                .collect(),
         };
         args.orchestrator
             .cast(OrchestratorMsg::UpdateToolbox(update))
@@ -243,6 +248,11 @@ impl ToolboxActor {
             preflight,
             current_step,
             shell_policy: state.shell_policy.clone(),
+            global_approved_tools: state.playbook_registry
+                .playbooks
+                .values()
+                .flat_map(|p| p.global_approved_tools.clone())
+                .collect(),
         };
         state.orchestrator
             .cast(OrchestratorMsg::UpdateToolbox(update))
@@ -619,6 +629,7 @@ fn parse_playbook_file(
     let success_condition = nu_str(&value, "success_condition")
         .unwrap_or_default();
     let preconditions = nu_str_list(&value, "preconditions");
+    let global_approved_tools = nu_str_list(&value, "global_approved_tools");
 
     let steps = nu_list(&value, "steps")
         .into_iter()
@@ -632,6 +643,7 @@ fn parse_playbook_file(
         description,
         success_condition,
         preconditions,
+        global_approved_tools,
         steps,
         source_path: path.to_path_buf(),
     })

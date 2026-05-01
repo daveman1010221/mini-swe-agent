@@ -166,6 +166,7 @@ impl Actor for OrchestratorActor {
                             last_tool_step: None,
                             last_compile_check: None,
                             last_test_write: None,
+                            global_approved_tools: update.global_approved_tools.clone(),
                         };
                         let _ = ractor::call!(
                             cc,

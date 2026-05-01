@@ -182,8 +182,8 @@ pub struct Playbook {
     pub description: String,
     pub success_condition: String,
     pub preconditions: Vec<String>,
+    pub global_approved_tools: Vec<String>,
     pub steps: Vec<PlaybookStep>,
-    /// Path to the .nu source file
     pub source_path: PathBuf,
 }
 
@@ -513,5 +513,6 @@ pub struct ToolboxUpdate {
     pub skills:            String,
     pub preflight:         Option<PreflightResult>,
     pub current_step:      Option<PlaybookStep>,
-    pub shell_policy:      ShellPolicy,          // ← new
+    pub shell_policy:      ShellPolicy,
+    pub global_approved_tools:  Vec<String>,
 }

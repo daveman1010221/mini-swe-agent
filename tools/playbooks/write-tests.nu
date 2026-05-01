@@ -22,6 +22,12 @@
   version: "1.0",
   description: "Write test coverage for a Rust crate — actors, types, or both.",
   success_condition: "All planned tests pass. zero failures. coverage plan fulfilled. task advanced.",
+  global_approved_tools: [
+    "meta/help", "meta/orient-report", "meta/loop-detect",
+    "meta/trajectory-summary", "meta/step-verify", "meta/session-stats",
+    "task/state", "task/record-attempt", "task/halt",
+    "playbook/current-step"
+  ],
 
   preconditions: [
     "current_task.crate is set and non-null",

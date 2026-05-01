@@ -190,7 +190,8 @@ fn check_approved_tools(call: &ToolCall, ctx: &PolicyContext) -> PolicyVerdict {
         return PolicyVerdict::Approved;
     }
 
-    if ctx.approved_tools.iter().any(|t| t == &tool_name) {
+    if ctx.approved_tools.iter().any(|t| t == &tool_name)
+        || ctx.global_approved_tools.iter().any(|t| t == &tool_name) {
         PolicyVerdict::Approved
     } else {
         PolicyVerdict::Rejected {

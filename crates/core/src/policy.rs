@@ -107,6 +107,7 @@ pub struct PolicyContext {
     pub last_compile_check: Option<LastCompileCheck>,
     /// Summary of the last test file write, if any.
     pub last_test_write: Option<LastTestWrite>,
+    pub global_approved_tools: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -134,6 +135,7 @@ impl PolicyContext {
             last_tool_step: None,
             last_compile_check: None,
             last_test_write: None,
+            global_approved_tools: vec![],
         }
     }
 }
