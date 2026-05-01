@@ -7,6 +7,7 @@ mod logging;
 mod wiring;
 
 use std::sync::Arc;
+use actors::policy_messages::{NormalizeRequest, ConstraintRequest};
 
 use anyhow::{bail, Result};
 use clap::Parser;
@@ -47,6 +48,33 @@ async fn main() {
             error!(error = %e, "Fatal error");
             std::process::exit(1);
         }
+    }
+}
+
+fn attach_feedback(obs: Observation, feedback: Vec<mswea_core::policy::FeedbackNote>) -> Observation {
+    let note = feedback.iter().map(|n| n.render()).collect::<Vec<_>>().join("\n");
+    match obs {
+        Observation::Structured { value, exit_code, feedback: existing } => {
+            Observation::Structured {
+                value,
+                exit_code,
+                feedback: Some(match existing {
+                    Some(e) => format!("{e}\n{note}"),
+                    None => note,
+                }),
+            }
+        }
+        Observation::FileWritten { path, lines_changed, feedback: existing } => {
+            Observation::FileWritten {
+                path,
+                lines_changed,
+                feedback: Some(match existing {
+                    Some(e) => format!("{e}\n{note}"),
+                    None => note,
+                }),
+            }
+        }
+        other => other,
     }
 }
 
@@ -212,16 +240,70 @@ async fn agent_loop(
             return Ok((ExitStatus::Submitted, step, total_cost));
         }
 
-        let observation = call_t!(
-            system.tool_router,
-            |reply| RouteRequest { call: tool_call.clone(), step, reply },
+        // ── Policy pipeline ───────────────────────────────────────────────────
+        // Stage 1: Normalize args (bool coercion, kebab-case, etc.)
+        let normalized = call_t!(
+            system.arg_normalizer,
+            |reply| NormalizeRequest {
+                call: tool_call.clone(),
+                context: mswea_core::policy::PolicyContext::initial(),
+                step,
+                reply,
+            },
             TOOL_CALL_TIMEOUT_MS
         )
-        .unwrap_or_else(|e| Observation::Error {
-            message: format!("ToolRouter RPC failed: {e}"),
-            exit_code: Some(1),
-            tool_call_summary: tool_call.summary(),
+        .unwrap_or_else(|_| mswea_core::policy::NormalizedToolCall::unchanged(tool_call.clone()));
+
+        // Stage 2: Check constraints
+        let pipeline_result = call_t!(
+            system.constraint_checker,
+            |reply| ConstraintCheckerMsg::Check(ConstraintRequest {
+                normalized: normalized.clone(),
+                context: mswea_core::policy::PolicyContext::initial(),
+                step,
+                reply,
+            }),
+            TOOL_CALL_TIMEOUT_MS
+        )
+        .unwrap_or_else(|e| mswea_core::policy::PipelineResult::Block {
+            reason: format!("ConstraintChecker RPC failed: {e}"),
+            feedback: vec![],
         });
+
+        // Stage 3: Execute or block
+        let observation = match pipeline_result {
+            mswea_core::policy::PipelineResult::Execute { call, feedback } => {
+                let mut obs = call_t!(
+                    system.tool_router,
+                    |reply| RouteRequest { call: call.clone(), step, reply },
+                    TOOL_CALL_TIMEOUT_MS
+                )
+                .unwrap_or_else(|e| Observation::Error {
+                    message: format!("ToolRouter RPC failed: {e}"),
+                    exit_code: Some(1),
+                    tool_call_summary: call.summary(),
+                });
+                if !feedback.is_empty() {
+                    obs = attach_feedback(obs, feedback);
+                }
+                obs
+            }
+            mswea_core::policy::PipelineResult::Block { reason, feedback } => {
+                let notes = feedback.iter()
+                    .map(|n| n.render())
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                Observation::Error {
+                    message: if notes.is_empty() {
+                        reason
+                    } else {
+                        format!("{reason}\n\n{notes}")
+                    },
+                    exit_code: Some(1),
+                    tool_call_summary: tool_call.summary(),
+                }
+            }
+        };
 
         // Notify ConstraintCheckerActor of what just happened
         let was_compile_check = matches!(&tool_call, 
