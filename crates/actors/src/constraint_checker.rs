@@ -20,12 +20,12 @@ use ractor::{Actor, ActorProcessingErr, ActorRef};
 use mswea_core::{
     policy::{
         FeedbackNote, PipelineResult, PolicyContext, PolicyVerdict,
+        LastTestWrite, LastCompileCheck
     },
     toolbox::ToolRegistry,
     ToolCall,
 };
-
-use crate::policy_messages::{ConstraintRequest, PolicyContextUpdate};
+use crate::policy_messages::{ConstraintRequest, PolicyContextUpdate, ToolCallCompleted};
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
 
@@ -43,6 +43,7 @@ pub struct ConstraintCheckerState {
 pub enum ConstraintCheckerMsg {
     Check(ConstraintRequest),
     UpdateContext(PolicyContextUpdate),
+    ToolCallCompleted(ToolCallCompleted),
 }
 
 impl Actor for ConstraintCheckerActor {
@@ -80,6 +81,27 @@ impl Actor for ConstraintCheckerActor {
                     "ConstraintCheckerActor: context updated"
                 );
                 let _ = update.reply.send(());
+            }
+            ConstraintCheckerMsg::ToolCallCompleted(completed) => {
+                state.context.last_tool_call = Some(completed.call_summary);
+                state.context.last_tool_step = Some(completed.step);
+
+                if let Some(path) = completed.path {
+                    if path.contains("/tests/") && path.ends_with(".rs") {
+                        state.context.last_test_write = Some(LastTestWrite {
+                            step: completed.step,
+                            path,
+                        });
+                    }
+                }
+
+                if completed.was_compile_check {
+                    state.context.last_compile_check = Some(LastCompileCheck {
+                        step: completed.step,
+                        clean: completed.compile_clean.unwrap_or(false),
+                        error_count: 0, // will refine later
+                    });
+                }
             }
         }
         Ok(())

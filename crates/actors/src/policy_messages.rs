@@ -64,3 +64,15 @@ pub struct PolicyContextUpdate {
     pub context: PolicyContext,
     pub reply: RpcReplyPort<()>,
 }
+
+/// Sent to ConstraintCheckerActor after each tool call completes.
+/// Allows it to update last_* tracking fields in PolicyContext
+/// for use in subsequent constraint checks.
+#[derive(Debug)]
+pub struct ToolCallCompleted {
+    pub call_summary: String,
+    pub step: u32,
+    pub path: Option<String>,       // set if this was a Write call
+    pub was_compile_check: bool,
+    pub compile_clean: Option<bool>, // Some(true/false) if was_compile_check
+}

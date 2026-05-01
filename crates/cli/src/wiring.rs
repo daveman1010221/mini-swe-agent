@@ -12,11 +12,6 @@ use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use anyhow::{Context, Result};
-use actors::{
-    new_event_bus, register_builtins, EventBus, EventLoggerActor, EventLoggerArgs,
-    OrchestratorActor, OrchestratorArgs, ToolboxActor, ToolboxArgs, ToolboxMsg,
-    ToolRouterActor, ToolRouterArgs, ConstraintCheckerActor, ConstraintCheckerArgs,
-};
 use environments::ShellWorker;
 use models::{LitellmClient, ModelActor};
 use mswea_core::{
@@ -27,12 +22,22 @@ use ractor::{Actor, ActorRef};
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{info, warn};
 
+use actors::{
+    new_event_bus, register_builtins, EventBus, EventLoggerActor, EventLoggerArgs,
+    OrchestratorActor, OrchestratorArgs, ToolboxActor, ToolboxArgs, ToolboxMsg,
+    ToolRouterActor, ToolRouterArgs, ConstraintCheckerActor, ConstraintCheckerArgs,
+    ArgNormalizerActor, ArgNormalizerArgs,
+};
+use actors::constraint_checker::ConstraintCheckerMsg;
+use actors::policy_messages::NormalizeRequest;
 use actors::tool_router::RouteRequest;
 
 /// Live handles to the running actor system.
 pub struct ActorSystem {
     pub model: ModelActor,
     pub tool_router: ActorRef<RouteRequest>,
+    pub arg_normalizer: ActorRef<NormalizeRequest>,
+    pub constraint_checker: ActorRef<ConstraintCheckerMsg>,
     pub event_bus: EventBus,
     pub system_prompt: Arc<RwLock<String>>,
     pub event_logger: Option<ActorRef<actors::EventLoggerMsg>>,
@@ -85,6 +90,20 @@ pub async fn boot_actor_system(
     .await
     .context("Spawning ConstraintCheckerActor")?;
 
+    // ── ArgNormalizerActor ───────────────────────────────────────────────────
+    let tool_registry_for_normalizer = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
+
+    let (arg_normalizer_ref, _norm_handle) = Actor::spawn(
+        Some("arg-normalizer".into()),
+        ArgNormalizerActor,
+        ArgNormalizerArgs {
+            tool_registry: Arc::clone(&tool_registry_for_normalizer),
+        },
+    )
+    .await
+    .context("Spawning ArgNormalizerActor")?;
+    info!("ArgNormalizerActor: ready");
+
     // ── OrchestratorActor ────────────────────────────────────────────────────
     let system_prompt = Arc::new(RwLock::new(String::new()));
 
@@ -102,7 +121,7 @@ pub async fn boot_actor_system(
             output_path:        format!("{output_path}.jsonl"),
             rules_section,
             skills_section,
-            constraint_checker: Some(constraint_checker_ref),
+            constraint_checker: Some(constraint_checker_ref.clone()),
         },
     )
     .await
@@ -183,6 +202,8 @@ pub async fn boot_actor_system(
     Ok(ActorSystem {
         model,
         tool_router,
+        arg_normalizer: arg_normalizer_ref,
+        constraint_checker: constraint_checker_ref,
         event_bus,
         system_prompt,
         event_logger,
@@ -193,6 +214,8 @@ pub async fn boot_actor_system(
 pub async fn shutdown_actor_system(system: ActorSystem) {
     info!("Shutting down actor system");
     system.tool_router.stop(None);
+    system.constraint_checker.stop(None);
+    system.arg_normalizer.stop(None);
     system.toolbox.stop(None);
     if let Some(ref logger) = system.event_logger {
         logger.stop(None);

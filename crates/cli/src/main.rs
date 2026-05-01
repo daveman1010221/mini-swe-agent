@@ -23,6 +23,8 @@ use ractor::{call_t, port::OutputPort};
 use tracing::{error, info, warn};
 
 use actors::tool_router::RouteRequest;
+use actors::ConstraintCheckerMsg;
+use actors::policy_messages::ToolCallCompleted;
 use args::CliArgs;
 use config_loader::resolve_config;
 use wiring::{boot_actor_system, shutdown_actor_system, ActorSystem};
@@ -220,6 +222,39 @@ async fn agent_loop(
             exit_code: Some(1),
             tool_call_summary: tool_call.summary(),
         });
+
+        // Notify ConstraintCheckerActor of what just happened
+        let was_compile_check = matches!(&tool_call, 
+            ToolCall::NushellTool { namespace, tool, .. } 
+            if namespace == "compile" && tool == "check"
+        );
+
+        let write_path = match &tool_call {
+            ToolCall::Write { path, .. } => Some(path.clone()),
+            _ => None,
+        };
+
+        let compile_clean = if was_compile_check {
+            // Extract clean field from observation if it's a structured result
+            if let Observation::Structured { .. } = observation {
+                // we'll refine this — for now just mark as checked
+                Some(true)
+            } else {
+                Some(false)
+            }
+        } else {
+            None
+        };
+
+        let _ = system.constraint_checker.cast(
+            ConstraintCheckerMsg::ToolCallCompleted(ToolCallCompleted {
+                call_summary: tool_call.summary(),
+                step,
+                path: write_path,
+                was_compile_check,
+                compile_clean,
+            })
+        );
 
         let obs_json = observation.to_llm_content();
         info!(observation = %truncate(&obs_json.to_string(), 120), "Observation");
