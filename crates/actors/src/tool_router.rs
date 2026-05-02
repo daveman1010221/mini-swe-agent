@@ -291,14 +291,7 @@ async fn dispatch_nushell_tool(
     }
 
     // Build flags string
-    let mut flags = args_to_flags(args);
-
-    // Inject --taskfile for task/* tools if not already provided
-    if namespace == "task" && !flags.contains("--taskfile") {
-        if let Ok(tf) = std::env::var("TASKFILE") {
-            flags = format!("--taskfile {tf} {flags}").trim().to_string();
-        }
-    }
+    let flags = args_to_flags(args);
 
     let command_summary = format!("tool: {} {}", script_path.display(), flags);
 

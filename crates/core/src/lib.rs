@@ -22,3 +22,15 @@ pub use policy::{
     PolicyContext, PolicyVerdict, PipelineResult,
     LastCompileCheck, LastTestWrite,
 };
+
+pub mod task;
+pub use task::{
+    RuntimeTaskFile, RuntimeTask, CoveragePlan, PlannedTest,
+    OrientRecord, AttemptRecord, CompletedTask, HaltedTask,
+    AdvanceRequest, AdvanceResponse,
+    WriteCoveragePlanRequest, WriteCoveragePlanResponse,
+    RecordAttemptRequest, RecordAttemptResponse,
+    RecordOrientRequest, RecordOrientResponse,
+    HaltRequest, HaltResponse,
+    TaskStateResponse, TaskStateData,
+};

@@ -30,3 +30,6 @@ pub mod constraint_checker;
 pub use constraint_checker::{
     ConstraintCheckerActor, ConstraintCheckerArgs, ConstraintCheckerMsg,
 };
+
+pub mod task_actor;
+pub use task_actor::{TaskActor, TaskActorArgs, TaskMsg};

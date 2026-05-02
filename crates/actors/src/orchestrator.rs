@@ -35,6 +35,11 @@ pub enum OrchestratorMsg {
     RegisterCapability(Capability),
     /// ToolboxActor is pushing updated toolbox state.
     UpdateToolbox(ToolboxUpdate),
+    /// TaskActor is notifying that the playbook step has changed.
+    PlaybookStepChanged {
+        step: String,
+        step_index: u32,
+    },
 }
 
 // ── Arguments ─────────────────────────────────────────────────────────────────
@@ -111,6 +116,19 @@ impl Actor for OrchestratorActor {
         state: &mut Self::State,
     ) -> Result<(), ActorProcessingErr> {
         match msg {
+            OrchestratorMsg::PlaybookStepChanged { step, step_index } => {
+                tracing::info!(
+                    step = %step,
+                    step_index,
+                    "OrchestratorActor: playbook step changed"
+                );
+                // Update the ooda section to reflect the new step
+                // For now just regenerate the prompt — the toolbox section
+                // already has the playbook info, we just need the prompt
+                // to reflect the current step
+                regenerate_prompt(state);
+            }
+
             OrchestratorMsg::RegisterCapability(cap) => {
                 let actor_id = cap.actor_id.clone();
                 state.capability_map.update(cap);

@@ -26,11 +26,38 @@ use actors::{
     new_event_bus, register_builtins, EventBus, EventLoggerActor, EventLoggerArgs,
     OrchestratorActor, OrchestratorArgs, ToolboxActor, ToolboxArgs, ToolboxMsg,
     ToolRouterActor, ToolRouterArgs, ConstraintCheckerActor, ConstraintCheckerArgs,
-    ArgNormalizerActor, ArgNormalizerArgs,
+    ArgNormalizerActor, ArgNormalizerArgs, TaskActor, TaskActorArgs, TaskMsg,
 };
 use actors::constraint_checker::ConstraintCheckerMsg;
 use actors::policy_messages::NormalizeRequest;
 use actors::tool_router::RouteRequest;
+
+use rcgen::generate_simple_self_signed;
+
+struct RpcCerts {
+    ca_cert_pem: String,
+    server_cert_pem: String,
+    server_key_pem: String,
+    client_cert_pem: String,
+    client_key_pem: String,
+}
+
+fn generate_rpc_certs() -> anyhow::Result<RpcCerts> {
+    let ca = generate_simple_self_signed(vec!["mswea-ca".to_string()])
+        .context("Generating CA cert")?;
+    let server = generate_simple_self_signed(vec!["127.0.0.1".to_string()])
+        .context("Generating server cert")?;
+    let client = generate_simple_self_signed(vec!["mswea-client".to_string()])
+        .context("Generating client cert")?;
+
+    Ok(RpcCerts {
+        ca_cert_pem:     ca.cert.pem(),
+        server_cert_pem: server.cert.pem(),
+        server_key_pem:  server.key_pair.serialize_pem(),
+        client_cert_pem: client.cert.pem(),
+        client_key_pem:  client.key_pair.serialize_pem(),
+    })
+}
 
 /// Live handles to the running actor system.
 pub struct ActorSystem {
@@ -38,6 +65,7 @@ pub struct ActorSystem {
     pub tool_router: ActorRef<RouteRequest>,
     pub arg_normalizer: ActorRef<NormalizeRequest>,
     pub constraint_checker: ActorRef<ConstraintCheckerMsg>,
+    pub task_actor: ActorRef<TaskMsg>,
     pub event_bus: EventBus,
     pub system_prompt: Arc<RwLock<String>>,
     pub event_logger: Option<ActorRef<actors::EventLoggerMsg>>,
@@ -129,12 +157,42 @@ pub async fn boot_actor_system(
 
     register_builtins(&orch_ref).context("Registering builtin capabilities")?;
 
+    let rpc_certs = generate_rpc_certs().context("Generating RPC mTLS certs")?;
+
     let mut shell_env = config.shell.env.clone();
+    shell_env.insert("MSWEA_RPC_BASE".into(), "https://127.0.0.1:8000".to_string());
+    shell_env.insert("MSWEA_RPC_PORT".into(), "8000".to_string());
+    shell_env.insert("MSWEA_CA_CERT".into(),     rpc_certs.ca_cert_pem.clone());
+    shell_env.insert("MSWEA_CLIENT_CERT".into(), rpc_certs.client_cert_pem.clone());
+    shell_env.insert("MSWEA_CLIENT_KEY".into(),  rpc_certs.client_key_pem.clone());
     shell_env.insert("WORKSPACE_ROOT".into(), config.shell.cwd.clone());
     if let Some(ref tf) = config.agent.task_file {
         shell_env.insert("TASKFILE".into(), tf.display().to_string());
         tracing::info!(taskfile = %tf.display(), "Injecting TASKFILE into shell env");
     }
+
+    // ── TaskActor ─────────────────────────────────────────────────────────────────
+    let task_file_path = config.agent.task_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("TaskActor requires --task-file to be set"))?;
+
+    let (task_actor_ref, _task_handle) = Actor::spawn(
+        Some("task-actor".into()),
+        TaskActor,
+        TaskActorArgs {
+            taskfile_path: task_file_path,
+            rpc_port: 8000,
+            constraint_checker: constraint_checker_ref.clone(),
+            orchestrator: orch_ref.clone(),
+            event_bus: Arc::clone(&event_bus),
+            server_cert_pem: rpc_certs.server_cert_pem,
+            server_key_pem: rpc_certs.server_key_pem,
+            ca_cert_pem: rpc_certs.ca_cert_pem,
+        },
+    )
+    .await
+    .context("Spawning TaskActor")?;
+    info!("TaskActor: ready, RPC on :8000");
 
     // ── ToolboxActor ─────────────────────────────────────────────────────────
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
@@ -203,6 +261,7 @@ pub async fn boot_actor_system(
         tool_router,
         arg_normalizer: arg_normalizer_ref,
         constraint_checker: constraint_checker_ref,
+        task_actor: task_actor_ref,
         event_bus,
         system_prompt,
         event_logger,
@@ -213,6 +272,7 @@ pub async fn boot_actor_system(
 pub async fn shutdown_actor_system(system: ActorSystem) {
     info!("Shutting down actor system");
     system.tool_router.stop(None);
+    system.task_actor.stop(None);
     system.constraint_checker.stop(None);
     system.arg_normalizer.stop(None);
     system.toolbox.stop(None);
