@@ -6,39 +6,33 @@
 # The approved_tools list is the agent's constraint for this step — no others.
 #
 # Usage:
-#   nu tools/playbook/current-step.nu --taskfile /workspace/agent-task.json
+#   nu tools/playbook/current-step.nu
 
-def main [
-    --taskfile: path = ""
-] {
-    let tf_path = if ($taskfile | str length) > 0 {
-        $taskfile
-    } else if ("TASKFILE" in $env) {
-        $env.TASKFILE
-    } else {
-        ""
-    }
+def main [] {
+    let base = $env.MSWEA_RPC_BASE? | default "http://127.0.0.1:8000"
 
-    if ($tf_path | str length) == 0 {
-        return { ok: false, data: null, error: "no taskfile path" }
-    }
-
-    let tf = (
-        try { open --raw $tf_path | from json }
-        catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
+    let state_resp = (
+        try {
+            http post $"($base)/task/state" {} --content-type application/json
+        } catch {|err|
+            return { ok: false, data: null, error: $"RPC call failed: ($err.msg)" }
+        }
     )
 
-    let current = ($tf | get current_task? | default null)
-    if $current == null {
+    if not $state_resp.ok {
+        return $state_resp
+    }
+
+    let data = $state_resp.data
+    if not $data.has_task {
         return { ok: false, data: null, error: "no current task — call task/next first" }
     }
 
-    let step_name     = ($current | get step?           | default "unknown")
-    let step_index    = ($current | get step_index?     | default 0)
-    let step_attempts = ($current | get step_attempts?  | default 0)
-    let task_type     = ($current | get op?             | default "write-tests")
+    let step_name     = $data.step | default "unknown"
+    let step_index    = $data.step_index | default 0
+    let step_attempts = $data.step_attempts | default 0
+    let task_type     = $data.op | default "write-tests"
 
-    # Step definitions — mirrors playbook/lookup but returns just the current step
     let all_steps = match $task_type {
         "write-tests" => {
             "survey": {
@@ -198,7 +192,7 @@ def main [
         }
     }
 
-    let step_budget      = ($step_data | get budget? | default 3)
+    let step_budget      = $step_data.budget? | default 3
     let budget_remaining = $step_budget - $step_attempts
 
     {
@@ -207,15 +201,15 @@ def main [
             step_name: $step_name,
             step_index: $step_index,
             task_type: $task_type,
-            description: ($step_data | get description),
-            approved_tools: ($step_data | get approved_tools),
-            forbidden_tools: ($step_data | get forbidden_tools),
-            verification_gate: ($step_data | get verification_gate),
+            description: $step_data.description,
+            approved_tools: $step_data.approved_tools,
+            forbidden_tools: $step_data.forbidden_tools,
+            verification_gate: $step_data.verification_gate,
             budget: $step_budget,
             budget_remaining: $budget_remaining,
             budget_exhausted: ($budget_remaining <= 0),
-            orient_questions: ($step_data | get orient_questions),
-            example_actions: ($step_data | get example_actions? | default []),
+            orient_questions: $step_data.orient_questions,
+            example_actions: ($step_data.example_actions? | default []),
         },
         error: null
     }

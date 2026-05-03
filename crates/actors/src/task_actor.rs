@@ -28,8 +28,10 @@ use mswea_core::{
         RecordAttemptRequest, RecordAttemptResponse, RecordOrientRequest,
         RecordOrientResponse, RuntimeTaskFile, TaskStateResponse,
         WriteCoveragePlanRequest, WriteCoveragePlanResponse, OrientRecord,
-        AttemptRecord, CompletedTask, HaltedTask, CoveragePlan,
+        AttemptRecord, CompletedTask, HaltedTask, DeferredTask, CoveragePlan,
+        LoadTaskRequest, LoadTaskResponse, DeferTaskRequest, DeferTaskResponse,
     },
+    event::{Event, EventKind},  // ← add this
     PolicyContext, RuntimeTask, TaskStateData,
 };
 
@@ -95,6 +97,14 @@ pub enum TaskMsg {
     GetState {
         reply: RpcReplyPort<TaskStateResponse>,
     },
+    LoadTask {
+        req: LoadTaskRequest,
+        reply: RpcReplyPort<LoadTaskResponse>,
+    },
+    DeferTask {
+        req: DeferTaskRequest,
+        reply: RpcReplyPort<DeferTaskResponse>,
+    },
 }
 
 // ── Actor impl ────────────────────────────────────────────────────────────────
@@ -126,6 +136,8 @@ impl Actor for TaskActor {
                 .route("/task/record-attempt",      post(handle_record_attempt))
                 .route("/task/record-orient",       post(handle_record_orient))
                 .route("/task/halt",                post(handle_halt))
+                .route("/task/load",                post(handle_load_task))
+                .route("/task/defer",               post(handle_defer_task))
                 .with_state(actor_ref);
 
             let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
@@ -180,6 +192,14 @@ impl Actor for TaskActor {
 
             TaskMsg::Halt { req, reply } => {
                 let response = handle_halt_msg(req, state).await;
+                let _ = reply.send(response);
+            }
+            TaskMsg::LoadTask { req, reply } => {
+                let response = handle_load_task_msg(req, state).await;
+                let _ = reply.send(response);
+            }
+            TaskMsg::DeferTask { req, reply } => {
+                let response = handle_defer_task_msg(req, state).await;
                 let _ = reply.send(response);
             }
         }
@@ -284,6 +304,184 @@ async fn handle_halt(
         error: Some(format!("RPC failed: {e}")),
     });
     Json(result)
+}
+
+async fn handle_load_task(
+    State(actor): State<TaskRpcState>,
+    Json(req): Json<LoadTaskRequest>,
+) -> Json<LoadTaskResponse> {
+    let result = ractor::call!(
+        actor,
+        |reply| TaskMsg::LoadTask { req, reply }
+    ).unwrap_or_else(|e| LoadTaskResponse {
+        ok: false,
+        has_task: false,
+        crate_name: None,
+        op: None,
+        first_step: None,
+        playbook_found: false,
+        error: Some(format!("RPC failed: {e}")),
+    });
+    Json(result)
+}
+
+async fn handle_defer_task(
+    State(actor): State<TaskRpcState>,
+    Json(req): Json<DeferTaskRequest>,
+) -> Json<DeferTaskResponse> {
+    let result = ractor::call!(
+        actor,
+        |reply| TaskMsg::DeferTask { req, reply }
+    ).unwrap_or_else(|e| DeferTaskResponse {
+        ok: false,
+        deferred: false,
+        crate_name: None,
+        reason: None,
+        error: Some(format!("RPC failed: {e}")),
+    });
+    Json(result)
+}
+
+async fn handle_load_task_msg(
+    _req: LoadTaskRequest,
+    state: &mut TaskActorState,
+) -> LoadTaskResponse {
+    // If there's already a non-halted current task, return it
+    if let Some(ref task) = state.taskfile.current_task {
+        return LoadTaskResponse {
+            ok: true,
+            has_task: true,
+            crate_name: Some(task.crate_name.clone()),
+            op: Some(task.op.clone()),
+            first_step: Some(task.step.clone()),
+            playbook_found: true,
+            error: None,
+        };
+    }
+
+    // Pop next from pending
+    if state.taskfile.pending.is_empty() {
+        return LoadTaskResponse {
+            ok: true,
+            has_task: false,
+            crate_name: None,
+            op: None,
+            first_step: None,
+            playbook_found: false,
+            error: None,
+        };
+    }
+
+    let next_raw = state.taskfile.pending.remove(0);
+    let next: RuntimeTask = match serde_json::from_value(next_raw) {
+        Ok(t) => t,
+        Err(e) => return LoadTaskResponse {
+            ok: false,
+            has_task: false,
+            crate_name: None,
+            op: None,
+            first_step: None,
+            playbook_found: false,
+            error: Some(format!("Failed to deserialize pending task: {e}")),
+        },
+    };
+
+    let crate_name = next.crate_name.clone();
+    let op = next.op.clone();
+    let first_step = next.step.clone();
+
+    state.taskfile.current_task = Some(next);
+    state.taskfile.last_updated = Some(now_utc());
+
+    if let Err(e) = state.taskfile.save(&state.taskfile_path) {
+        tracing::error!("Failed to save taskfile: {e}");
+    }
+
+    state.event_bus.send(Event::new(
+        "task-actor",
+        EventKind::TaskLoaded {
+            crate_name: crate_name.clone(),
+            op: op.clone(),
+            first_step: first_step.clone(),
+        },
+    ));
+
+    if let Some(ref task) = state.taskfile.current_task {
+        if let Err(e) = notify_step_change(task, state).await {
+            tracing::error!("notify_step_change failed: {e}");
+        }
+    }
+
+    LoadTaskResponse {
+        ok: true,
+        has_task: true,
+        crate_name: Some(crate_name),
+        op: Some(op),
+        first_step: Some(first_step),
+        playbook_found: true,
+        error: None,
+    }
+}
+
+async fn handle_defer_task_msg(
+    req: DeferTaskRequest,
+    state: &mut TaskActorState,
+) -> DeferTaskResponse {
+    let Some(ref task) = state.taskfile.current_task else {
+        return DeferTaskResponse {
+            ok: false,
+            deferred: false,
+            crate_name: None,
+            reason: None,
+            error: Some("no current task".to_string()),
+        };
+    };
+
+    if task.crate_name != req.crate_name {
+        return DeferTaskResponse {
+            ok: false,
+            deferred: false,
+            crate_name: None,
+            reason: None,
+            error: Some(format!(
+                "current task is '{}', not '{}'",
+                task.crate_name, req.crate_name
+            )),
+        };
+    }
+
+    let deferred = DeferredTask {
+        crate_name: task.crate_name.clone(),
+        op: task.op.clone(),
+        step: task.step.clone(),
+        reason: req.reason.clone(),
+        deferred_at: now_utc(),
+    };
+
+    state.event_bus.send(Event::new(
+        "task-actor",
+        EventKind::TaskDeferred {
+            crate_name: deferred.crate_name.clone(),
+            op: deferred.op.clone(),
+            reason: req.reason.clone(),
+        },
+    ));
+
+    state.taskfile.deferred.push(deferred);
+    state.taskfile.current_task = None;
+    state.taskfile.last_updated = Some(now_utc());
+
+    if let Err(e) = state.taskfile.save(&state.taskfile_path) {
+        tracing::error!("Failed to save taskfile: {e}");
+    }
+
+    DeferTaskResponse {
+        ok: true,
+        deferred: true,
+        crate_name: Some(req.crate_name),
+        reason: Some(req.reason),
+        error: None,
+    }
 }
 
 // ── Business logic ────────────────────────────────────────────────────────────
@@ -423,7 +621,7 @@ async fn handle_advance_msg(
             crate_name: task.crate_name.clone(),
             op: task.op.clone(),
             status: "done".to_string(),
-            verification: req.verification,
+            verification: req.verification.clone(),
             completed_at: now_utc(),
         };
         state.taskfile.completed.push(completed);
@@ -438,7 +636,7 @@ async fn handle_advance_msg(
         task.step = next;
         task.step_index = next_index;
         task.step_attempts = 0;
-        task.last_verification = Some(req.verification);
+        task.last_verification = Some(req.verification.clone());
         task.last_advanced_at = Some(now_utc());
     }
 
@@ -454,6 +652,34 @@ async fn handle_advance_msg(
     // Write backing store
     if let Err(e) = state.taskfile.save(&state.taskfile_path) {
         tracing::error!("Failed to save taskfile: {e}");
+    }
+
+    // Emit task lifecycle event
+    if task_completed {
+        state.event_bus.send(Event::new(
+            "task-actor",
+            EventKind::TaskCompleted {
+                crate_name: previous_step.clone(), // already captured before mutation
+                op: String::new(), // task moved to completed list
+                verification: req.verification.clone(),
+            },
+        ));
+    } else {
+        state.event_bus.send(Event::new(
+            "task-actor",
+            EventKind::TaskAdvanced {
+                crate_name: state.taskfile.current_task
+                    .as_ref()
+                    .map(|t| t.crate_name.clone())
+                    .unwrap_or_default(),
+                previous_step: previous_step.clone(),
+                current_step: next_step.clone().unwrap_or_default(),
+                step_index: state.taskfile.current_task
+                    .as_ref()
+                    .map(|t| t.step_index)
+                    .unwrap_or(0),
+            },
+        ));
     }
 
     AdvanceResponse {
@@ -615,17 +841,27 @@ async fn handle_halt_msg(
         crate_name: task.crate_name.clone(),
         op: task.op.clone(),
         step: task.step.clone(),
-        reason: req.reason,
+        reason: req.reason.clone(),
         halted_at: now_utc(),
     };
 
-    state.taskfile.halted.push(halted);
+    state.taskfile.halted.push(halted.clone());
     state.taskfile.current_task = None;
     state.taskfile.last_updated = Some(now_utc());
 
     if let Err(e) = state.taskfile.save(&state.taskfile_path) {
         tracing::error!("Failed to save taskfile: {e}");
     }
+
+    state.event_bus.send(Event::new(
+        "task-actor",
+        EventKind::TaskHalted {
+            crate_name: halted.crate_name.clone(),
+            op: halted.op.clone(),
+            step: halted.step.clone(),
+            reason: req.reason.clone(),
+        },
+    ));
 
     HaltResponse {
         ok: true,

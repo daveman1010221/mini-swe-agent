@@ -125,6 +125,16 @@ pub struct HaltedTask {
     pub halted_at: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeferredTask {
+    #[serde(rename = "crate")]
+    pub crate_name: String,
+    pub op: String,
+    pub step: String,
+    pub reason: String,
+    pub deferred_at: String,
+}
+
 // ── Runtime task file ─────────────────────────────────────────────────────────
 
 /// The authoritative runtime task file owned by TaskActor.
@@ -139,6 +149,8 @@ pub struct RuntimeTaskFile {
     pub completed: Vec<CompletedTask>,
     #[serde(default)]
     pub halted: Vec<HaltedTask>,
+    #[serde(default)]
+    pub deferred: Vec<DeferredTask>,
     #[serde(default)]
     pub last_updated: Option<String>,
 }
@@ -238,6 +250,37 @@ pub struct HaltRequest {
 pub struct HaltResponse {
     pub ok: bool,
     pub halted: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadTaskRequest {
+    // No fields — pops the next pending task, no input required
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoadTaskResponse {
+    pub ok: bool,
+    pub has_task: bool,
+    pub crate_name: Option<String>,
+    pub op: Option<String>,
+    pub first_step: Option<String>,
+    pub playbook_found: bool,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeferTaskRequest {
+    pub crate_name: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeferTaskResponse {
+    pub ok: bool,
+    pub deferred: bool,
+    pub crate_name: Option<String>,
+    pub reason: Option<String>,
     pub error: Option<String>,
 }
 

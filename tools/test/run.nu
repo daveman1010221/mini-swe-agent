@@ -49,7 +49,7 @@ def main [
 
     let duration_secs = ((date now) - $start_time | into int) / 1_000_000_000.0
 
-    let output = $result.stdout
+    let output = $result.stdout + "\n" + $result.stderr
     let lines = ($output | lines)
 
     # Parse test results

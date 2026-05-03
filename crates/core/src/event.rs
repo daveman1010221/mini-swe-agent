@@ -82,6 +82,13 @@ pub enum EventKind {
     AgentInstanceFailed { instance_id: String, error: String },
     BatchStarted        { instance_count: usize, worker_count: usize },
     BatchFinished       { completed: usize, failed: usize, duration_ms: u64 },
+
+    // ── Task lifecycle ────────────────────────────────────────────────────────
+    TaskLoaded   { crate_name: String, op: String, first_step: String },
+    TaskAdvanced { crate_name: String, previous_step: String, current_step: String, step_index: u32 },
+    TaskCompleted { crate_name: String, op: String, verification: String },
+    TaskHalted   { crate_name: String, op: String, step: String, reason: String },
+    TaskDeferred { crate_name: String, op: String, reason: String },
 }
 
 fn now_ms() -> u64 {

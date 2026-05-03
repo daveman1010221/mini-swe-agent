@@ -31,6 +31,7 @@ pub use task::{
     WriteCoveragePlanRequest, WriteCoveragePlanResponse,
     RecordAttemptRequest, RecordAttemptResponse,
     RecordOrientRequest, RecordOrientResponse,
-    HaltRequest, HaltResponse,
-    TaskStateResponse, TaskStateData,
+    HaltRequest, HaltResponse, TaskStateResponse, TaskStateData,
+    LoadTaskRequest, LoadTaskResponse, DeferTaskRequest, DeferTaskResponse,
+    DeferredTask,
 };

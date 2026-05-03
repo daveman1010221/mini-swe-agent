@@ -3,52 +3,48 @@
 #
 # Checks whether the current playbook step's verification gate has been met.
 # Call this before task/advance — never advance without calling this first.
-# The gate must pass before the agent is allowed to advance.
 #
 # Usage:
-#   nu tools/meta/step-verify.nu --taskfile /workspace/agent-task.json --trajectory /tmp/run.jsonl
+#   nu tools/meta/step-verify.nu
+#   nu tools/meta/step-verify.nu --trajectory /tmp/run.jsonl
 
 def main [
-    --taskfile: path = "",
     --trajectory: path = "",
-    --step: string = ""    # step to verify (default: current step from taskfile)
+    --step: string = ""    # step to verify (default: current step from task state)
 ] {
-    let tf_path = if ($taskfile | str length) > 0 {
-        $taskfile
-    } else if ("TASKFILE" in $env) {
-        $env.TASKFILE
-    } else {
-        ""
-    }
+    let base = $env.MSWEA_RPC_BASE? | default "http://127.0.0.1:8000"
 
-    if ($tf_path | str length) == 0 {
-        return { ok: false, data: null, error: "no taskfile path" }
-    }
-
-    let tf = (
-        try { open --raw $tf_path | from json }
-        catch {|err| return { ok: false, data: null, error: $"failed to parse taskfile: ($err.msg)" }}
+    let state_resp = (
+        try {
+            http post $"($base)/task/state" {} --content-type application/json
+        } catch {|err|
+            return { ok: false, data: null, error: $"RPC call failed: ($err.msg)" }
+        }
     )
 
-    let current = ($tf | get current_task? | default null)
-    if $current == null {
+    if not $state_resp.ok {
+        return $state_resp
+    }
+
+    let data = $state_resp.data
+    if not $data.has_task {
         return { ok: false, data: null, error: "no current task" }
     }
 
     let current_step = if ($step | str length) > 0 { $step } else {
-        $current | get step? | default "unknown"
+        $data.step | default "unknown"
     }
 
-    # Step-specific verification logic — returns [gate, passed, evidence, missing]
+    let crate_path = $data.crate_path | default ""
+
     let verify_result = match $current_step {
         "survey" => {
-            let evidence = "Survey automated by ToolboxActor — preflight results available"
-            ["compile/check passed and crate structure understood" true $evidence []]
+            ["compile/check passed and crate structure understood" true "Survey automated by ToolboxActor — preflight results available" []]
         }
 
         "orient" => {
-            let plan = ($current | get coverage_plan? | default null)
-            let planned = if $plan != null { $plan | get planned_tests? | default [] } else { [] }
+            let plan = $data.coverage_plan | default null
+            let planned = if $plan != null { $plan.planned_tests? | default [] } else { [] }
             let planned_count = ($planned | length)
             let passed = ($plan != null) and ($planned_count > 0)
             let evidence = if $passed { $"Coverage plan written with ($planned_count) planned tests" } else { "" }
@@ -60,7 +56,6 @@ def main [
         }
 
         "scaffold" => {
-            let crate_path = ($current | get crate_path? | default "")
             let tests_dir  = ($crate_path | path join "tests")
             let has_tests_dir = if ($crate_path | str length) > 0 { $tests_dir | path exists } else { false }
             let cargo_toml = ($crate_path | path join "Cargo.toml")
@@ -77,10 +72,9 @@ def main [
         }
 
         "write" => {
-            let plan = ($current | get coverage_plan? | default null)
-            let planned = if $plan != null { $plan | get planned_tests? | default [] } else { [] }
-            let crate_path = ($current | get crate_path? | default "")
-            let tests_dir  = ($crate_path | path join "tests")
+            let plan = $data.coverage_plan | default null
+            let planned = if $plan != null { $plan.planned_tests? | default [] } else { [] }
+            let tests_dir = ($crate_path | path join "tests")
 
             let actual_names = if ($tests_dir | path exists) {
                 try {
@@ -102,10 +96,10 @@ def main [
                 } catch { [] }
             } else { [] }
 
-            let missing_tests = ($planned | where {|p| not ($actual_names | any {|a| $a == ($p | get name? | default "")})})
+            let missing_tests = ($planned | where {|p| not ($actual_names | any {|a| $a == ($p.name? | default "")})})
             let passed = ($missing_tests | is-empty)
             let evidence = if $passed { $"All ($planned | length) planned tests found in test files" } else { "" }
-            let missing_list = ($missing_tests | each {|t| $"test '($t | get name? | default '')' not yet written"})
+            let missing_list = ($missing_tests | each {|t| $"test '($t.name? | default '')' not yet written"})
             ["all planned tests written and compile/check passes" $passed $evidence $missing_list]
         }
 
@@ -117,8 +111,8 @@ def main [
                     | lines
                     | where ($it | str length) > 0
                     | each {|l| $l | from json}
-                    | where {|e| ($e | get kind.kind? | default "") == "shell_command_completed"}
-                    | where {|e| ($e | get kind.exit_code? | default 1) == 0}
+                    | where {|e| ($e.kind.kind? | default "") == "shell_command_completed"}
+                    | where {|e| ($e.kind.exit_code? | default 1) == 0}
                     | length
                 } catch { 0 }
             } else { 0 }
@@ -137,10 +131,10 @@ def main [
         }
     }
 
-    let gate    = ($verify_result | get 0)
-    let passed  = ($verify_result | get 1)
+    let gate     = ($verify_result | get 0)
+    let passed   = ($verify_result | get 1)
     let evidence = ($verify_result | get 2)
-    let missing = ($verify_result | get 3)
+    let missing  = ($verify_result | get 3)
 
     {
         ok: true,
