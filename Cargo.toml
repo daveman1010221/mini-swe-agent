@@ -74,7 +74,7 @@ axum = { version = "0.7" }
 tokio-util = { version = "0.7" }
 
 rcgen = { version = "0.13" }
-rustls = { version = "0.23" }
+rustls = { version = "0.23", features = ["ring"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 
 [profile.release]

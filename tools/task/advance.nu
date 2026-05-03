@@ -23,7 +23,7 @@ def main [
 
     let result = (
         try {
-            http post $"($base)/task/advance" {verification: $verification}
+            http post $"($base)/task/advance" ({verification: $verification} | to json) --content-type application/json
         } catch {|err|
             return { ok: false, data: null, error: $"TaskActor RPC failed: ($err.msg)" }
         }

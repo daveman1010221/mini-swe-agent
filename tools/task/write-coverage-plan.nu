@@ -50,7 +50,7 @@ def main [
 
     let result = (
         try {
-            http post $"($base)/task/write-coverage-plan" $body
+            http post $"($base)/task/write-coverage-plan" ($body | to json) --content-type application/json
         } catch {|err|
             return { ok: false, data: null, error: $"TaskActor RPC failed: ($err.msg)" }
         }

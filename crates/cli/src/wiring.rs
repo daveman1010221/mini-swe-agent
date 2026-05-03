@@ -38,8 +38,6 @@ struct RpcCerts {
     ca_cert_pem: String,
     server_cert_pem: String,
     server_key_pem: String,
-    client_cert_pem: String,
-    client_key_pem: String,
 }
 
 fn generate_rpc_certs() -> anyhow::Result<RpcCerts> {
@@ -47,15 +45,11 @@ fn generate_rpc_certs() -> anyhow::Result<RpcCerts> {
         .context("Generating CA cert")?;
     let server = generate_simple_self_signed(vec!["127.0.0.1".to_string()])
         .context("Generating server cert")?;
-    let client = generate_simple_self_signed(vec!["mswea-client".to_string()])
-        .context("Generating client cert")?;
 
     Ok(RpcCerts {
         ca_cert_pem:     ca.cert.pem(),
         server_cert_pem: server.cert.pem(),
         server_key_pem:  server.key_pair.serialize_pem(),
-        client_cert_pem: client.cert.pem(),
-        client_key_pem:  client.key_pair.serialize_pem(),
     })
 }
 
@@ -160,11 +154,9 @@ pub async fn boot_actor_system(
     let rpc_certs = generate_rpc_certs().context("Generating RPC mTLS certs")?;
 
     let mut shell_env = config.shell.env.clone();
-    shell_env.insert("MSWEA_RPC_BASE".into(), "https://127.0.0.1:8000".to_string());
+    shell_env.insert("MSWEA_RPC_BASE".into(), "http://127.0.0.1:8000".to_string());
     shell_env.insert("MSWEA_RPC_PORT".into(), "8000".to_string());
     shell_env.insert("MSWEA_CA_CERT".into(),     rpc_certs.ca_cert_pem.clone());
-    shell_env.insert("MSWEA_CLIENT_CERT".into(), rpc_certs.client_cert_pem.clone());
-    shell_env.insert("MSWEA_CLIENT_KEY".into(),  rpc_certs.client_key_pem.clone());
     shell_env.insert("WORKSPACE_ROOT".into(), config.shell.cwd.clone());
     if let Some(ref tf) = config.agent.task_file {
         shell_env.insert("TASKFILE".into(), tf.display().to_string());

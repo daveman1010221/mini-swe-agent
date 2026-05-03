@@ -18,7 +18,6 @@ use axum::{
     routing::post,
     Router,
 };
-use axum_server::tls_rustls::RustlsConfig;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
 use tracing::info;
@@ -40,6 +39,8 @@ use crate::{
     policy_messages::PolicyContextUpdate,
     event_bus::EventBus,
 };
+
+use tokio::net::TcpListener;
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
 
@@ -116,17 +117,8 @@ impl Actor for TaskActor {
         // Spawn axum RPC server — passes actor ref to handlers
         let actor_ref = myself.clone();
         let port = args.rpc_port;
-        let server_cert = args.server_cert_pem.clone();
-        let server_key = args.server_key_pem.clone();
 
         tokio::spawn(async move {
-            let config = RustlsConfig::from_pem(
-                server_cert.into_bytes(),
-                server_key.into_bytes(),
-            )
-            .await
-            .expect("TaskActor: failed to build TLS config");
-
             let app = Router::new()
                 .route("/task/state",               post(handle_get_state))
                 .route("/task/advance",             post(handle_advance))
@@ -136,12 +128,11 @@ impl Actor for TaskActor {
                 .route("/task/halt",                post(handle_halt))
                 .with_state(actor_ref);
 
-            let addr = format!("127.0.0.1:{port}").parse()
-                .expect("TaskActor: invalid bind address");
-
-            info!("TaskActor RPC server listening on https://{addr}");
-            axum_server::bind_rustls(addr, config)
-                .serve(app.into_make_service())
+            let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
+                .await
+                .expect("TaskActor RPC server failed to bind");
+            info!("TaskActor RPC server listening on http://127.0.0.1:{port}");
+            axum::serve(listener, app)
                 .await
                 .expect("TaskActor RPC server failed");
         });

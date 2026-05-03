@@ -9,6 +9,7 @@ use nu_protocol::{
     engine::{EngineState, Stack, StateWorkingSet},
     PipelineData, Span, Value,
 };
+use nu_command::tls::CRYPTO_PROVIDER;
 use tracing::{debug, instrument, warn};
 
 pub struct NushellSession {
@@ -191,13 +192,10 @@ impl NushellSession {
 }
 
 fn create_engine(cwd: &str) -> Result<EngineState> {
+    CRYPTO_PROVIDER.default();
     let engine = nu_cmd_lang::create_default_context();
     let engine = nu_command::add_shell_command_context(engine);
-
-    // Set the working directory on the engine state so commands like
-    // ls know where they are.
     let mut engine = engine;
     engine.add_env_var("PWD".into(), Value::string(cwd, Span::unknown()));
-
     Ok(engine)
 }
