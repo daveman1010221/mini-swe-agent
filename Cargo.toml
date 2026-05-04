@@ -5,6 +5,7 @@ members = [
     "crates/models",
     "crates/environments",
     "crates/cli",
+    "crates/nu-plugin-mswea",
 ]
 resolver = "2"
 
@@ -21,12 +22,15 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 futures = "0.3"
 
 # actor framework
-ractor = "0.15"
+ractor = { version = "0.15", features = ["cluster"] }
+ractor_cluster = { version = "0.15" }
+ractor_cluster_derive = { version = "0.15" }
 
 # serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
+prost = "0.13"
 
 rkyv = { version = "0.8" }
 
@@ -50,15 +54,16 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # retry
 backon = "1"
 
-# http
-reqwest = { version = "0.12", features = ["json", "stream"] }
+# http (for model API calls — rustls only, no native-tls)
+reqwest = { version = "0.12", features = ["json", "stream", "rustls-tls"], default-features = false }
 
 # nushell (embedded)
-nu-engine   = "0.111"
-nu-protocol = "0.111"
-nu-parser   = "0.111"
-nu-cmd-lang = "0.111"
-nu-command  = "0.111"
+nu-engine   = "=0.112.2"
+nu-protocol = "=0.112.2"
+nu-parser   = "=0.112.2"
+nu-cmd-lang = "=0.112.2"
+nu-command  = "=0.112.2"
+nu-plugin   = "=0.112.2"
 
 # cli
 clap = { version = "4", features = ["derive", "env"] }
@@ -69,9 +74,9 @@ dotenv = "0.15"
 
 proptest = "1"
 
+# axum kept for now — will be removed when TaskActor HTTP is replaced
 axum = { version = "0.7" }
 tokio-util = { version = "0.7" }
-
 rcgen = { version = "0.13" }
 rustls = { version = "0.23", features = ["ring"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }

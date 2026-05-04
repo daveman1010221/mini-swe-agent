@@ -1,0 +1,45 @@
+[package]
+name = "nu-plugin-mswea"
+version.workspace = true
+edition.workspace = true
+
+# This crate builds two artifacts:
+#   1. A library used by the mswea cli to register plugin commands into the
+#      embedded nushell session via the ractor cluster.
+#   2. A binary (nu_plugin_mswea) that nushell spawns as an external plugin
+#      process, which joins the ractor cluster and serves the plugin protocol.
+
+[[bin]]
+name = "nu_plugin_mswea"
+path = "src/main.rs"
+
+[dependencies]
+mswea-core = { path = "../core" }
+
+# nushell plugin
+nu-plugin   = "=0.112.2"
+nu-protocol = "=0.112.2"
+
+# actor framework + cluster
+ractor.workspace = true
+ractor_cluster.workspace = true
+ractor_cluster_derive.workspace = true
+prost.workspace = true
+
+# serialization
+rkyv.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# async runtime
+tokio.workspace = true
+
+# error handling
+anyhow.workspace = true
+thiserror.workspace = true
+
+# logging
+tracing.workspace = true
+
+# http client for outbound calls (model API etc.)
+reqwest.workspace = true
