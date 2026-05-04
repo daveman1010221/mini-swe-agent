@@ -2,8 +2,8 @@ use nu_plugin::{EngineInterface, EvaluatedCall, SimplePluginCommand};
 use nu_protocol::{Category, LabeledError, Signature, Type, Value, record};
 use tokio::time::Duration;
 
-use actors::task_actor::TaskMsg;
-use mswea_core::task::{TaskStateResponse, TaskStateData, CoveragePlan, OrientRecord};
+use mswea_core::task::TaskMsg;
+use mswea_core::task::TaskStateResponse;
 
 use crate::plugin::MsweaPlugin;
 

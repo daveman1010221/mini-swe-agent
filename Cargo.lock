@@ -1258,6 +1258,9 @@ dependencies = [
  "nu-command",
  "nu-engine",
  "nu-parser",
+ "nu-plugin",
+ "nu-plugin-engine",
+ "nu-plugin-mswea",
  "nu-protocol",
  "rustls",
  "serde_json",
@@ -3051,10 +3054,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "nu-plugin-engine"
+version = "0.112.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d6c05368491d4048ed6d72eabd06cdf8f563d5f932ea324aa8deccca2e42bf1"
+dependencies = [
+ "log",
+ "nu-engine",
+ "nu-plugin-core",
+ "nu-plugin-protocol",
+ "nu-protocol",
+ "nu-system",
+ "nu-utils",
+ "serde",
+ "windows",
+]
+
+[[package]]
 name = "nu-plugin-mswea"
 version = "0.1.0"
 dependencies = [
- "actors",
  "anyhow",
  "mswea-core",
  "nu-plugin",

@@ -15,6 +15,8 @@ use std::net::{IpAddr, Ipv4Addr};
 use tokio::time::{Duration, sleep};
 
 use nu_plugin_mswea::MsweaPlugin;
+use mswea_core::task::TaskMsg;
+use mswea_core::policy::ConstraintCheckerMsg;
 
 fn main() {
     // Read cluster connection details from environment
@@ -56,9 +58,9 @@ fn main() {
         sleep(Duration::from_millis(500)).await;
 
         // Resolve remote ActorRefs by name from the cluster registry
-        let task_actor: Option<ActorRef<actors::task_actor::TaskMsg>> =
+        let task_actor: Option<ActorRef<TaskMsg>> =
             ActorRef::where_is("task-actor".to_string());
-        let constraint_checker: Option<ActorRef<actors::constraint_checker::ConstraintCheckerMsg>> =
+        let constraint_checker: Option<ActorRef<ConstraintCheckerMsg>> =
             ActorRef::where_is("constraint-checker".to_string());
 
         MsweaPlugin::new(task_actor, constraint_checker, rt_handle)

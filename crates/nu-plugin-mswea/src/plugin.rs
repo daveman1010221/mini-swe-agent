@@ -6,8 +6,6 @@
 
 use nu_plugin::{Plugin, PluginCommand};
 use ractor::ActorRef;
-use actors::task_actor::TaskMsg;
-use actors::constraint_checker::ConstraintCheckerMsg;
 use tokio::runtime::Handle;
 
 use crate::commands::{
@@ -17,6 +15,8 @@ use crate::commands::{
         MsweaRpcTaskState, MsweaRpcWriteCoveragePlan,
     },
 };
+use mswea_core::task::TaskMsg;
+use mswea_core::policy::ConstraintCheckerMsg;
 
 
 /// The mswea plugin state, shared across all command invocations.
@@ -27,12 +27,8 @@ use crate::commands::{
 /// Initialized once at plugin startup and reused for the lifetime of the
 /// plugin process / session.
 pub struct MsweaPlugin {
-    /// Direct ActorRef to TaskActor on the mswea-core cluster node.
-    /// None if the cluster connection has not been established.
     pub task_actor: Option<ActorRef<TaskMsg>>,
-    /// Direct ActorRef to ConstraintCheckerActor on the mswea-core node.
     pub constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
-    /// Tokio runtime handle for bridging sync plugin commands to async actor calls.
     pub rt: Handle,
 }
 

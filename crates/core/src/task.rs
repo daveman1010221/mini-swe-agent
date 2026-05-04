@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
+use ractor::RpcReplyPort;
+use ractor_cluster::RactorClusterMessage;
 
 // ── Coverage plan ─────────────────────────────────────────────────────────────
 
@@ -309,4 +311,51 @@ pub struct TaskStateData {
     pub pending_count: usize,
     pub completed_count: usize,
     pub halted_count: usize,
+}
+
+// ── Actor message type ────────────────────────────────────────────────────────
+// Defined in mswea-core so nu-plugin-mswea can hold ActorRef<TaskMsg>
+// without depending on the actors crate.
+
+#[derive(Debug, RactorClusterMessage)]
+pub enum TaskMsg {
+    #[rpc]
+    Advance {
+        req: AdvanceRequest,
+        reply: RpcReplyPort<AdvanceResponse>,
+    },
+    #[rpc]
+    WriteCoveragePlan {
+        req: WriteCoveragePlanRequest,
+        reply: RpcReplyPort<WriteCoveragePlanResponse>,
+    },
+    #[rpc]
+    RecordAttempt {
+        req: RecordAttemptRequest,
+        reply: RpcReplyPort<RecordAttemptResponse>,
+    },
+    #[rpc]
+    RecordOrient {
+        req: RecordOrientRequest,
+        reply: RpcReplyPort<RecordOrientResponse>,
+    },
+    #[rpc]
+    Halt {
+        req: HaltRequest,
+        reply: RpcReplyPort<HaltResponse>,
+    },
+    #[rpc]
+    GetState {
+        reply: RpcReplyPort<TaskStateResponse>,
+    },
+    #[rpc]
+    LoadTask {
+        req: LoadTaskRequest,
+        reply: RpcReplyPort<LoadTaskResponse>,
+    },
+    #[rpc]
+    DeferTask {
+        req: DeferTaskRequest,
+        reply: RpcReplyPort<DeferTaskResponse>,
+    },
 }

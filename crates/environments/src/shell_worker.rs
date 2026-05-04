@@ -21,6 +21,10 @@ enum ShellRequest {
         flags: String,
         reply: mpsc::SyncSender<Result<Observation>>,
     },
+    RegisterPlugin {
+        plugin_binary: PathBuf,
+        reply: mpsc::SyncSender<Result<()>>,
+    },
 }
 
 #[derive(Clone)]
@@ -85,6 +89,26 @@ impl ShellWorker {
         .await
         .context("spawn_blocking panicked")?
     }
+
+    pub async fn register_mswea_plugin(&self, plugin_binary: &std::path::Path) -> Result<()> {
+        let plugin_binary = plugin_binary.to_path_buf();
+        let tx = self.tx.clone();
+
+        tokio::task::spawn_blocking(move || {
+            let (reply_tx, reply_rx) = mpsc::sync_channel(1);
+            tx.send(ShellRequest::RegisterPlugin {
+                plugin_binary,
+                reply: reply_tx,
+            })
+            .map_err(|_| anyhow!("Shell worker thread has exited"))?;
+
+            reply_rx
+                .recv()
+                .map_err(|_| anyhow!("Shell worker reply channel closed"))?
+        })
+        .await
+        .context("spawn_blocking panicked")?
+    }
 }
 
 fn session_thread(rx: mpsc::Receiver<ShellRequest>, cwd: &str, env: &std::collections::HashMap<String, String>) {
@@ -108,6 +132,10 @@ fn session_thread(rx: mpsc::Receiver<ShellRequest>, cwd: &str, env: &std::collec
             ShellRequest::CallTool { script_path, flags, reply } => {
                 debug!(script = %script_path.display(), flags = %flags, "Tool call");
                 let result = run_tool(&mut session, &script_path, &flags);
+                let _ = reply.send(result);
+            }
+            ShellRequest::RegisterPlugin { plugin_binary, reply } => {
+                let result = session.register_mswea_plugin(&plugin_binary);
                 let _ = reply.send(result);
             }
         }

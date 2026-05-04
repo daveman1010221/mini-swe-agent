@@ -13,6 +13,83 @@
 
 use serde::{Deserialize, Serialize};
 use crate::ToolCall;
+// ── Policy pipeline message types ─────────────────────────────────────────────
+// Defined in mswea-core so nu-plugin-mswea can hold ActorRef<ConstraintCheckerMsg>
+// without depending on the actors crate.
+
+use ractor::RpcReplyPort;
+use ractor_cluster::RactorMessage;
+
+/// Request to normalize a raw ToolCall.
+#[derive(RactorMessage)]
+pub struct NormalizeRequest {
+    pub call: ToolCall,
+    pub context: PolicyContext,
+    pub step: u32,
+    pub reply: RpcReplyPort<NormalizedToolCall>,
+}
+
+impl std::fmt::Debug for NormalizeRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NormalizeRequest")
+            .field("call", &self.call.summary())
+            .field("step", &self.step)
+            .finish()
+    }
+}
+
+/// Request to validate a normalized ToolCall against active constraints.
+#[derive(RactorMessage)]
+pub struct ConstraintRequest {
+    pub normalized: NormalizedToolCall,
+    pub step: u32,
+    pub reply: RpcReplyPort<PipelineResult>,
+}
+
+impl std::fmt::Debug for ConstraintRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ConstraintRequest")
+            .field("call", &self.normalized.call.summary())
+            .field("step", &self.step)
+            .finish()
+    }
+}
+
+/// Broadcast from OrchestratorActor whenever playbook state changes.
+#[derive(Debug, RactorMessage)]
+pub struct PolicyContextUpdate {
+    pub context: PolicyContext,
+    pub reply: RpcReplyPort<()>,
+}
+
+/// Sent after each tool call completes successfully.
+#[derive(Debug, RactorMessage)]
+pub struct ToolCallCompleted {
+    pub call_summary: String,
+    pub step: u32,
+    pub path: Option<String>,
+    pub was_compile_check: bool,
+    pub compile_clean: Option<bool>,
+}
+
+/// Sent after the pipeline blocks a tool call.
+#[derive(Debug, RactorMessage)]
+pub struct ToolCallRejected {
+    pub call_summary: String,
+    pub step: u32,
+    pub reason: String,
+}
+
+/// ConstraintCheckerActor message type.
+/// Defined here so nu-plugin-mswea can hold ActorRef<ConstraintCheckerMsg>
+/// for policy decisions without depending on the actors crate.
+#[derive(Debug, RactorMessage)]
+pub enum ConstraintCheckerMsg {
+    Check(ConstraintRequest),
+    UpdateContext(PolicyContextUpdate),
+    ToolCallCompleted(ToolCallCompleted),
+    ToolCallRejected(ToolCallRejected),
+}
 
 // ── Feedback ──────────────────────────────────────────────────────────────────
 

@@ -256,6 +256,18 @@ pub async fn boot_actor_system(
     // ── ShellWorker (agent's shell) ──────────────────────────────────────────
     let shell = ShellWorker::spawn(&config.shell.cwd, &shell_env)
         .context("Spawning ShellWorker")?;
+
+    // Register nu_plugin_mswea so tool scripts can call mswea commands
+    let plugin_binary = std::env::current_exe()
+        .context("Finding current exe")?
+        .parent()
+        .context("Finding exe directory")?
+        .join("nu_plugin_mswea");
+
+    shell.register_mswea_plugin(&plugin_binary)
+        .await
+        .context("Registering nu_plugin_mswea")?;
+
     info!(cwd = %config.shell.cwd, "ShellWorker: ready");
 
     // ── ToolRouterActor ──────────────────────────────────────────────────────

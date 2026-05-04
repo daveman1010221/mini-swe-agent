@@ -48,7 +48,6 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use ractor::{Actor, ActorProcessingErr, ActorRef};
-use ractor_cluster::RactorMessage;
 
 use mswea_core::{
     policy::{
@@ -58,9 +57,7 @@ use mswea_core::{
     toolbox::ToolRegistry,
     ToolCall,
 };
-use crate::policy_messages::{
-    ConstraintRequest, PolicyContextUpdate, ToolCallCompleted, ToolCallRejected,
-};
+pub use mswea_core::policy::ConstraintCheckerMsg;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -95,14 +92,6 @@ pub struct ConstraintCheckerState {
     /// rejections are distinguishable from successful sequences.
     /// Future: implement Lempel-Ziv or simple subsequence matching here.
     call_window: VecDeque<String>,
-}
-
-#[derive(RactorMessage)]
-pub enum ConstraintCheckerMsg {
-    Check(ConstraintRequest),
-    UpdateContext(PolicyContextUpdate),
-    ToolCallCompleted(ToolCallCompleted),
-    ToolCallRejected(ToolCallRejected),
 }
 
 impl Actor for ConstraintCheckerActor {

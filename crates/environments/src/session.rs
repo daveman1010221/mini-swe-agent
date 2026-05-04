@@ -3,13 +3,15 @@
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};
+use nu_command::tls::CRYPTO_PROVIDER;
 use nu_engine::get_eval_block_with_early_return;
 use nu_parser::parse;
+use nu_plugin::create_plugin_signature;
+use nu_plugin_engine::{add_plugin_to_working_set, PluginDeclaration};
 use nu_protocol::{
     engine::{EngineState, Stack, StateWorkingSet},
-    PipelineData, Span, Value,
+    PipelineData, PluginIdentity, Span, Value,
 };
-use nu_command::tls::CRYPTO_PROVIDER;
 use tracing::{debug, instrument, warn};
 
 pub struct NushellSession {
@@ -193,6 +195,49 @@ impl NushellSession {
             .map_err(|e| anyhow::anyhow!("Failed to read {}: {e}", path.display()))?;
         let (value, _) = self.eval_ephemeral(&content)?;
         Ok(value)
+    }
+
+    /// Register the nu_plugin_mswea binary into the engine so that
+    /// `mswea rpc record-orient` etc. are available as native commands.
+    ///
+    /// Must be called after `new()` and before any tool scripts run.
+    /// The plugin binary path must be absolute.
+    ///
+    /// IMPORTANT: This registers the plugin signatures without spawning the
+    /// plugin process. The plugin process is spawned lazily by nushell on
+    /// first use, inheriting the environment (including MSWEA_CLUSTER_ADDR
+    /// and MSWEA_CLUSTER_COOKIE) set during session construction.
+    pub fn register_mswea_plugin(&mut self, plugin_binary: &std::path::Path) -> Result<()> {
+        let identity = PluginIdentity::new(plugin_binary, None)
+            .map_err(|e| anyhow!("Invalid plugin path {}: {e}", plugin_binary.display()))?;
+
+        let engine_mut = Arc::make_mut(&mut self.engine);
+        let mut working_set = StateWorkingSet::new(engine_mut);
+
+        let plugin = add_plugin_to_working_set(&mut working_set, &identity)
+            .map_err(|e| anyhow!("Failed to register plugin: {e}"))?;
+
+        // Register each command signature from the plugin
+        let mswea_plugin = nu_plugin_mswea::MsweaPlugin::new(None, None,
+            tokio::runtime::Handle::try_current()
+                .unwrap_or_else(|_| tokio::runtime::Runtime::new()
+                    .expect("tokio runtime")
+                    .handle()
+                    .clone())
+        );
+
+        for command in nu_plugin::Plugin::commands(&mswea_plugin) {
+            let sig = create_plugin_signature(command.as_ref());
+            let decl = PluginDeclaration::new(plugin.clone(), sig);
+            working_set.add_decl(Box::new(decl));
+        }
+
+        let delta = working_set.render();
+        engine_mut.merge_delta(delta)
+            .map_err(|e| anyhow!("Failed to merge plugin delta: {e}"))?;
+
+        tracing::info!(path = %plugin_binary.display(), "Registered mswea plugin commands");
+        Ok(())
     }
 }
 

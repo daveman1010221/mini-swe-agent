@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 mswea-core = { path = "../core" }
+nu-plugin-mswea = { path = "../nu-plugin-mswea" }
 
 tokio.workspace = true
 anyhow.workspace = true
@@ -18,6 +19,8 @@ nu-parser.workspace = true
 nu-protocol.workspace = true
 nu-cmd-lang.workspace = true
 nu-command.workspace = true
+nu-plugin-engine.workspace = true
+nu-plugin.workspace = true
 rustls = { workspace = true }
 
 [dev-dependencies]
