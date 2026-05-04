@@ -9,12 +9,13 @@
 //!       decision: $decision
 //!       blockers: $blockers
 //!   }
-//!
-//! The record fields map directly to the orient report stored in TaskActor.
-//! Returns { ok: bool, recorded: bool, step: string, budget_remaining: int, error: string? }
 
 use nu_plugin::{EngineInterface, EvaluatedCall, SimplePluginCommand};
 use nu_protocol::{Category, LabeledError, Signature, SyntaxShape, Type, Value, record};
+use tokio::time::Duration;
+
+use actors::task_actor::TaskMsg;
+use mswea_core::task::{RecordOrientRequest, RecordOrientResponse};
 
 use crate::plugin::MsweaPlugin;
 
@@ -23,9 +24,7 @@ pub struct MsweaRpcRecordOrient;
 impl SimplePluginCommand for MsweaRpcRecordOrient {
     type Plugin = MsweaPlugin;
 
-    fn name(&self) -> &str {
-        "mswea rpc record-orient"
-    }
+    fn name(&self) -> &str { "mswea rpc record-orient" }
 
     fn description(&self) -> &str {
         "Record an orient step observation and decision to the task actor."
@@ -39,7 +38,7 @@ step budget is decremented.
 The input record must contain:
   observed  — what the agent observed during this orient cycle
   decision  — what the agent decided to do next
-  blockers  — (optional) list of blocking issues identified"#
+  blockers  — (optional) blocking issues identified"#
     }
 
     fn signature(&self) -> Signature {
@@ -48,57 +47,70 @@ The input record must contain:
             .required(
                 "report",
                 SyntaxShape::Record(vec![]),
-                "Orient report record with observed, decision, and optional blockers fields.",
+                "Orient report with observed, decision, and optional blockers fields.",
             )
             .category(Category::Custom("mswea".into()))
     }
 
     fn run(
         &self,
-        _plugin: &MsweaPlugin,
+        plugin: &MsweaPlugin,
         _engine: &EngineInterface,
         call: &EvaluatedCall,
         _input: &Value,
     ) -> Result<Value, LabeledError> {
-        let report: Value = call.req(0)?;
         let span = call.head;
+        let report: Value = call.req(0)?;
 
-        // Extract fields from the record
         let observed = report
             .get_data_by_key("observed")
             .and_then(|v| v.as_str().ok().map(|s| s.to_string()))
-            .ok_or_else(|| {
-                LabeledError::new("Missing required field")
-                    .with_label("record must contain 'observed' string field", span)
-            })?;
+            .ok_or_else(|| LabeledError::new("Missing required field")
+                .with_label("record must contain 'observed' string field", span))?;
 
         let decision = report
             .get_data_by_key("decision")
             .and_then(|v| v.as_str().ok().map(|s| s.to_string()))
-            .ok_or_else(|| {
-                LabeledError::new("Missing required field")
-                    .with_label("record must contain 'decision' string field", span)
-            })?;
+            .ok_or_else(|| LabeledError::new("Missing required field")
+                .with_label("record must contain 'decision' string field", span))?;
 
         let blockers = report
             .get_data_by_key("blockers")
-            .and_then(|v| v.as_str().ok().map(|s| s.to_string()))
-            .unwrap_or_default();
+            .and_then(|v| v.as_str().ok().map(|s| s.to_string()));
 
-        // TODO: send RecordOrient message to TaskActor via ractor cluster ActorRef
-        // For now, return a stub response so the plugin compiles and tools can be
-        // written against the correct return shape.
-        let _ = (observed, decision, blockers);
+        let task_actor = plugin.task_actor.as_ref().ok_or_else(|| {
+            LabeledError::new("Plugin not connected")
+                .with_label("task-actor ActorRef not resolved — is the mswea runtime running?", span)
+        })?;
 
-        Ok(Value::record(
-            record! {
-                "ok" => Value::bool(false, span),
-                "recorded" => Value::bool(false, span),
-                "step" => Value::string("", span),
-                "budget_remaining" => Value::int(0, span),
-                "error" => Value::string("ractor cluster not yet connected", span),
+        let req = RecordOrientRequest { observed, decision, blockers };
+
+        // Bridge sync plugin command into async actor call via stored runtime handle
+        let response: RecordOrientResponse = match plugin.rt.block_on(async {
+            task_actor.call(
+                |reply| TaskMsg::RecordOrient { req, reply },
+                Some(Duration::from_secs(5)),
+            )
+            .await
+        }) {
+            Err(e) => return Err(LabeledError::new("Actor messaging error")
+                .with_label(format!("Failed to send to task-actor: {e}"), span)),
+            Ok(ractor::rpc::CallResult::Success(v)) => v,
+            Ok(ractor::rpc::CallResult::Timeout) => return Err(LabeledError::new("Actor call timed out")
+                .with_label("task-actor did not reply within 5 seconds", span)),
+            Ok(ractor::rpc::CallResult::SenderError) => return Err(LabeledError::new("Actor send error")
+                .with_label("task-actor reply channel closed", span)),
+        };
+
+        Ok(Value::record(record! {
+            "ok"               => Value::bool(response.ok, span),
+            "recorded"         => Value::bool(response.recorded, span),
+            "step"             => Value::string(response.step, span),
+            "budget_remaining" => Value::int(response.budget_remaining as i64, span),
+            "error"            => match response.error {
+                Some(e) => Value::string(e, span),
+                None    => Value::nothing(span),
             },
-            span,
-        ))
+        }, span))
     }
 }

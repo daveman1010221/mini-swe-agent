@@ -28,7 +28,9 @@ fn main() {
     let rt = tokio::runtime::Runtime::new()
         .expect("Failed to create Tokio runtime");
 
-    let plugin = rt.block_on(async move {
+    let rt_handle = rt.handle().clone();
+
+    let plugin = rt.block_on(async {
         // Start our node server on an ephemeral port (0 = OS picks)
         let (node_server, _handle) = Actor::spawn(
             Some("mswea-plugin-node".into()),
@@ -51,18 +53,15 @@ fn main() {
             .expect("Failed to connect to mswea-core cluster node");
 
         // Give the cluster handshake time to complete and actors to sync
-        // The NodeSession auth + ready handshake is async — we wait briefly
-        // then resolve ActorRefs by name from the remote registry.
         sleep(Duration::from_millis(500)).await;
 
-        // Resolve remote ActorRefs by name.
-        // ractor's registry makes named actors visible across cluster nodes.
+        // Resolve remote ActorRefs by name from the cluster registry
         let task_actor: Option<ActorRef<actors::task_actor::TaskMsg>> =
             ActorRef::where_is("task-actor".to_string());
         let constraint_checker: Option<ActorRef<actors::constraint_checker::ConstraintCheckerMsg>> =
             ActorRef::where_is("constraint-checker".to_string());
 
-        MsweaPlugin::new(task_actor, constraint_checker)
+        MsweaPlugin::new(task_actor, constraint_checker, rt_handle)
     });
 
     // serve_plugin takes over — handles the nushell plugin protocol
