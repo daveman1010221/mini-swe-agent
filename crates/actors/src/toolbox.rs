@@ -463,7 +463,14 @@ fn parse_tool_flags(script_path: &std::path::Path) -> Vec<mswea_core::toolbox::T
 
         let (raw_name, flag_type) = match name_type.split_once(':') {
             Some((n, t)) => (n.trim(), t.trim().to_string()),
-            None         => (name_type, "string".to_string()),
+            None => {
+                // No type annotation — check if it's a bare switch (no default either)
+                if default.is_none() {
+                    (name_type, "switch".to_string())
+                } else {
+                    (name_type, "string".to_string())
+                }
+            }
         };
 
         let name = raw_name.trim_start_matches('-').to_string();

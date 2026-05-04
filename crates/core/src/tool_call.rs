@@ -59,7 +59,26 @@ impl ToolCall {
             Self::Write { path, .. }         => format!("write: {path}"),
             Self::Read { path }              => format!("read: {path}"),
             Self::Search { query, .. }       => format!("search: {}", truncate(query, 40)),
-            Self::NushellTool { namespace, tool, .. } => format!("{namespace}/{tool}"),
+            ToolCall::NushellTool { namespace, tool, args } => {
+                // Include the primary target arg in the summary so loop detection
+                // can distinguish between calls to the same tool with different targets.
+                // e.g. "extract/file:/workspace/crates/core/src/error.rs" vs
+                //      "extract/file:/workspace/crates/core/src/lib.rs"
+                let args_val: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+                let target = args_val.as_object()
+                    .and_then(|o| {
+                        // Look for common "target" arg names in priority order
+                        o.get("file")
+                            .or_else(|| o.get("path"))
+                            .or_else(|| o.get("crate-path"))
+                            .or_else(|| o.get("crate"))
+                            .or_else(|| o.get("tool"))
+                    })
+                    .and_then(|v| v.as_str())
+                    .map(|s| format!(":{}", truncate(s, 40)))
+                    .unwrap_or_default();
+                format!("{namespace}/{tool}{target}")
+            }
             Self::Submit { .. }              => "submit".to_string(),
         }
     }

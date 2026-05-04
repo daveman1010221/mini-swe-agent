@@ -25,7 +25,7 @@ use tracing::{error, info, warn};
 
 use actors::tool_router::RouteRequest;
 use actors::ConstraintCheckerMsg;
-use actors::policy_messages::ToolCallCompleted;
+use actors::policy_messages::{ToolCallCompleted, ToolCallRejected};
 use args::CliArgs;
 use config_loader::resolve_config;
 use wiring::{boot_actor_system, shutdown_actor_system, ActorSystem};
@@ -288,6 +288,16 @@ async fn agent_loop(
                 obs
             }
             mswea_core::policy::PipelineResult::Block { reason, feedback } => {
+                // Notify constraint checker of rejection for loop enforcement tracking.
+                // This drives consecutive_rejections counters and call_window population.
+                let _ = system.constraint_checker.cast(
+                    ConstraintCheckerMsg::ToolCallRejected(ToolCallRejected {
+                        call_summary: tool_call.summary(),
+                        step,
+                        reason: reason.clone(),
+                    })
+                );
+
                 let notes = feedback.iter()
                     .map(|n| n.render())
                     .collect::<Vec<_>>()

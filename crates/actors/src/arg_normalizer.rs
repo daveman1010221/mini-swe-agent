@@ -67,6 +67,119 @@ impl Actor for ArgNormalizerActor {
 // ── Normalization logic ───────────────────────────────────────────────────────
 
 async fn normalize(call: ToolCall, registry: &Arc<RwLock<ToolRegistry>>) -> NormalizedToolCall {
+    // ── Primitive type coercion ───────────────────────────────────────────────
+    //
+    // TEMPORARY: The model occasionally emits NushellTool calls with namespace
+    // "read", "write", "edit", or "search" — treating primitive ToolCall variants
+    // as if they were nushell tool namespaces. This is a model schema confusion.
+    //
+    // The correct long-term fix is to unify all tool calls under NushellTool and
+    // implement read/write/edit/search as actual nushell scripts in tools/fs/,
+    // eliminating the primitive variants entirely. That refactor touches ToolCall,
+    // ToolRouterActor, ConstraintCheckerActor, main.rs event emission, and the
+    // system prompt tool schema. Until then, this coercion keeps the pipeline
+    // functional by converting the malformed calls to their correct primitive form.
+    //
+    // TODO: Remove this when primitive tool calls are unified under NushellTool.
+    if let ToolCall::NushellTool { namespace, tool: _, args } = &call {
+        let args_val: serde_json::Value = serde_json::from_str(args).unwrap_or_default();
+        let obj = args_val.as_object();
+
+        match namespace.as_str() {
+            "read" => {
+                let path = obj
+                    .and_then(|o| o.get("path"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    return NormalizedToolCall::with_feedback(
+                        ToolCall::Read { path },
+                        vec![FeedbackNote::info(
+                            "ArgNormalizer",
+                            "Converted {\"type\":\"nushell_tool\",\"namespace\":\"read\"} \
+                             to {\"type\":\"read\"}. Use {\"type\":\"read\",\"path\":\"...\"} directly.",
+                        )],
+                    );
+                }
+            }
+            "write" => {
+                let path = obj
+                    .and_then(|o| o.get("path"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                let content = obj
+                    .and_then(|o| o.get("content"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    return NormalizedToolCall::with_feedback(
+                        ToolCall::Write { path, content },
+                        vec![FeedbackNote::info(
+                            "ArgNormalizer",
+                            "Converted {\"type\":\"nushell_tool\",\"namespace\":\"write\"} \
+                             to {\"type\":\"write\"}. Use {\"type\":\"write\",\"path\":\"...\",\"content\":\"...\"} directly.",
+                        )],
+                    );
+                }
+            }
+            "edit" => {
+                let path = obj
+                    .and_then(|o| o.get("path"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                let old = obj
+                    .and_then(|o| o.get("old"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                let new = obj
+                    .and_then(|o| o.get("new"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                if !path.is_empty() {
+                    return NormalizedToolCall::with_feedback(
+                        ToolCall::Edit { path, old, new },
+                        vec![FeedbackNote::info(
+                            "ArgNormalizer",
+                            "Converted {\"type\":\"nushell_tool\",\"namespace\":\"edit\"} \
+                             to {\"type\":\"edit\"}. Use {\"type\":\"edit\",\"path\":\"...\",\"old\":\"...\",\"new\":\"...\"} directly.",
+                        )],
+                    );
+                }
+            }
+            "search" => {
+                let query = obj
+                    .and_then(|o| o.get("query"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
+                let path = obj
+                    .and_then(|o| o.get("path"))
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string());
+                let regex = obj
+                    .and_then(|o| o.get("regex"))
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if !query.is_empty() {
+                    return NormalizedToolCall::with_feedback(
+                        ToolCall::Search { query, path, regex },
+                        vec![FeedbackNote::info(
+                            "ArgNormalizer",
+                            "Converted {\"type\":\"nushell_tool\",\"namespace\":\"search\"} \
+                             to {\"type\":\"search\"}. Use {\"type\":\"search\",\"query\":\"...\"} directly.",
+                        )],
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
     match &call {
         ToolCall::NushellTool { namespace, tool, args } => {
             let full_name = format!("{namespace}/{tool}");
@@ -107,7 +220,7 @@ async fn normalize(call: ToolCall, registry: &Arc<RwLock<ToolRegistry>>) -> Norm
 
                 // Coerce string "true"/"false" to boolean for bool flags
                 if let Some(flag) = tool_flags.iter().find(|f| f.name == flag_name) {
-                    if flag.flag_type == "bool" {
+                    if flag.flag_type == "bool" || flag.flag_type == "switch" {
                         if let serde_json::Value::String(s) = val {
                             match s.as_str() {
                                 "true" => {

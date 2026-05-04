@@ -85,7 +85,7 @@ pub struct TaskFile {
     #[serde(default)]
     pub taskfile: String,
     #[serde(default)]
-    pub last_updated: String,
+    pub last_updated: Option<String>,
     #[serde(default)]
     pub schema_notes: String,
     #[serde(default)]

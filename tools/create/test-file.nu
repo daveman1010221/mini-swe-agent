@@ -71,40 +71,24 @@ def main [
 
     let scaffold = if $target == "unit" {
         let import_line = if ($import_list | length) > 0 {
-            $"use ($crate_name_snake)::{($import_list | str join ', ')};\n"
+            let sep = ", "
+            $"use ($crate_name_snake)::($import_list | str join $sep);\n"
         } else {
             $"// use ($crate_name_snake)::YourType;\n"
         }
 
-$"($import_line)
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Add your unit tests here.
-    // Run with: cargo test --package ($crate_name) --test unit
-}
-"
+    let sep = ", "
+            $import_line + "\n#[cfg(test)]\nmod tests {\n    use super::*;\n\n    // Add your unit tests here.\n    // Run with: cargo test --package " + $crate_name + " --test unit\n}\n"
     } else {
         let import_line = if ($import_list | length) > 0 {
-            $"use ($crate_name_snake)::{($import_list | str join ', ')};\n"
+            let sep = ", "
+            $"use ($crate_name_snake)::($import_list | str join $sep);\n"
         } else {
             $"// use ($crate_name_snake)::YourType;\n"
         }
 
-$"use proptest::prelude::*;
-($import_line)
-proptest! {
-    // Add your property tests here.
-    // Run with: cargo test --package ($crate_name) --test props
-    //
-    // Example:
-    // #[test]
-    // fn prop_example\(s in '.*'\) {
-    //     prop_assert!\(my_function\(&s\).is_ok\(\)\);
-    // }
-}
-"
+    let sep = ", "
+    "use proptest::prelude::*;\n" + $import_line + "\nproptest! {\n    // Add your property tests here.\n    // Run with: cargo test --package " + $crate_name + " --test props\n    // Example: #[test] fn prop_example(s in any::<String>()) { prop_assert!(true); }\n}\n"
     }
 
     # Write the file

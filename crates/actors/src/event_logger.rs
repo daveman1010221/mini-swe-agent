@@ -107,11 +107,8 @@ impl Actor for EventLoggerActor {
                             return Ok(());
                         }
                         let _ = state.writer.write_all(b"\n").await;
+                        let _ = state.writer.flush().await;  // ← always flush
                         state.count += 1;
-                        // Flush every 50 events.
-                        if state.count % 50 == 0 {
-                            let _ = state.writer.flush().await;
-                        }
                     }
                     Err(e) => {
                         warn!(error = %e, "EventLogger serialization error");

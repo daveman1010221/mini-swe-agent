@@ -22,7 +22,17 @@ def main [
     --existing-tests: int = 0,
     --planned-tests: string = "[]",
 ] {
-    let planned = (try { $planned_tests | from json } catch { [] })
+    # Coerce bare strings into PlannedTest records
+    let planned = (
+        try { $planned_tests | from json } catch { [] }
+        | each {|t|
+            if ($t | describe) == "string" {
+                {name: $t, type: "unit", rationale: "auto-coerced from string — provide proper rationale"}
+            } else {
+                $t
+            }
+        }
+    )
 
     if ($planned | length) == 0 {
         return {
@@ -52,18 +62,26 @@ def main [
         try {
             http post $"($base)/task/write-coverage-plan" ($body | to json) --content-type application/json
         } catch {|err|
-            return { ok: false, data: null, error: $"TaskActor RPC failed: ($err.msg)" }
+            return {
+                ok: false,
+                data: null,
+                error: $"TaskActor RPC failed: ($err.msg) — check that planned_tests contains objects with name/type/rationale fields"
+            }
         }
     )
 
+    if not $result.ok {
+        return { ok: false, data: null, error: $result.error }
+    }
+
     {
-        ok: $result.ok,
+        ok: true,
         data: {
             plan_recorded: $result.plan_recorded,
             planned_count: $result.planned_count,
             serde_tests: (if $serde_required { $planned | length } else { 0 }),
             rkyv_tests: (if $rkyv_required { $planned | length } else { 0 }),
         },
-        error: $result.error
+        error: null
     }
 }
