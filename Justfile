@@ -341,9 +341,10 @@ ci:
 agent-clean:
     rm -f /tmp/test-state-check.jsonl
     rm -f /tmp/mswea-core-tests.jsonl
-    rm -f crates/core/tests/unit.rs
-    rm -f crates/core/tests/props.rs
+    rm -f crates/core/tests/*.rs
     git checkout agent-task.json
+    git checkout Cargo.toml
+    git checkout crates/core/Cargo.toml
 
 # Clean and run the agent
 agent-run: agent-clean build-release
