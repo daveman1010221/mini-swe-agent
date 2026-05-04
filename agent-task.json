@@ -1,17 +1,15 @@
 {
   "workspace_root": "/workspace",
-  "current_task": null,
+  "current_task": {
+    "crate": "mswea-core",
+    "crate_path": "crates/core",
+    "op": "write-tests",
+    "step": "survey",
+    "step_index": 0,
+    "step_attempts": 0,
+    "step_budget": 3
+  },
   "pending": [],
   "completed": [],
-  "halted": [
-    {
-      "crate": "mswea-core",
-      "op": "write-tests",
-      "step": "write",
-      "reason": "All planned tests written: test_exit_status_serde_roundtrip, test_exit_status_rkyv_roundtrip, test_exit_status_partial_eq, test_observation_serde_roundtrip, test_observation_rkyv_roundtrip. Task complete despite tool loop issues preventing verification.",
-      "halted_at": "2026-05-04T00:56:38Z"
-    }
-  ],
-  "deferred": [],
-  "last_updated": "2026-05-04T00:56:38Z"
+  "last_updated": null
 }
