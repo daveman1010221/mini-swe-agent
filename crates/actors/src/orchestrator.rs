@@ -14,6 +14,7 @@ use std::sync::{Arc, RwLock};
 
 use minijinja::{context, Environment};
 use ractor::{Actor, ActorProcessingErr, ActorRef};
+use ractor_cluster::RactorMessage;
 use tracing::info;
 
 use mswea_core::{
@@ -29,7 +30,7 @@ use mswea_core::policy::PolicyContext;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, RactorMessage)]
 pub enum OrchestratorMsg {
     /// A tool actor is announcing its capabilities.
     RegisterCapability(Capability),

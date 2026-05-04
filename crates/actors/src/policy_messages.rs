@@ -12,6 +12,7 @@
 //!   - ToolCallRejected  — sent after pipeline blocks, drives loop enforcement
 
 use ractor::RpcReplyPort;
+use ractor_cluster::RactorMessage;
 use mswea_core::{
     policy::{NormalizedToolCall, PipelineResult, PolicyContext},
     ToolCall,
@@ -22,6 +23,7 @@ use mswea_core::{
 /// Request to normalize a raw ToolCall from the model.
 /// ArgNormalizerActor fixes types, coerces bools, normalizes flag names,
 /// and collects FeedbackNotes for anything it changed.
+#[derive(RactorMessage)]
 pub struct NormalizeRequest {
     pub call: ToolCall,
     pub context: PolicyContext,
@@ -43,6 +45,7 @@ impl std::fmt::Debug for NormalizeRequest {
 /// Request to validate a normalized ToolCall against active constraints.
 /// ConstraintCheckerActor fans out to domain policy actors and reduces
 /// their verdicts into a single PipelineResult.
+#[derive(RactorMessage)]
 pub struct ConstraintRequest {
     pub normalized: NormalizedToolCall,
     pub step: u32,
@@ -62,7 +65,7 @@ impl std::fmt::Debug for ConstraintRequest {
 
 /// Broadcast from OrchestratorActor whenever playbook state changes.
 /// All policy actors receive this and update their cached context.
-#[derive(Debug)]
+#[derive(Debug, RactorMessage)]
 pub struct PolicyContextUpdate {
     pub context: PolicyContext,
     pub reply: RpcReplyPort<()>,
@@ -83,7 +86,7 @@ pub struct ToolCallCompleted {
 /// Sent to ConstraintCheckerActor after the pipeline blocks a tool call.
 /// Drives consecutive rejection tracking and sequence loop detection.
 /// Distinct from ToolCallCompleted — rejected calls never reach ToolRouter.
-#[derive(Debug)]
+#[derive(Debug, RactorMessage)]
 pub struct ToolCallRejected {
     pub call_summary: String,
     pub step: u32,

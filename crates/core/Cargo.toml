@@ -14,6 +14,9 @@ chrono.workspace = true
 tracing.workspace = true
 nu-protocol.workspace = true
 anyhow.workspace = true
+ractor = { workspace = true, features = ["cluster"] }
+ractor_cluster = { workspace = true }
+ractor_cluster_derive = { workspace = true }
 
 [dev-dependencies]
 proptest.workspace = true

@@ -28,6 +28,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef};
+use ractor_cluster::RactorMessage;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
@@ -45,7 +46,7 @@ use crate::orchestrator::OrchestratorMsg;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, RactorMessage)]
 pub enum ToolboxMsg {
     /// Re-scan tools/, playbooks/, and skills/.
     ReloadAll,

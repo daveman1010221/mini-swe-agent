@@ -48,6 +48,7 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use ractor::{Actor, ActorProcessingErr, ActorRef};
+use ractor_cluster::RactorMessage;
 
 use mswea_core::{
     policy::{
@@ -96,6 +97,7 @@ pub struct ConstraintCheckerState {
     call_window: VecDeque<String>,
 }
 
+#[derive(RactorMessage)]
 pub enum ConstraintCheckerMsg {
     Check(ConstraintRequest),
     UpdateContext(PolicyContextUpdate),

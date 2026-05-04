@@ -20,6 +20,7 @@ use axum::{
 };
 
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
+use ractor_cluster::RactorClusterMessage;
 use tracing::info;
 
 use mswea_core::{
@@ -71,36 +72,44 @@ pub type TaskRpcState = ActorRef<TaskMsg>;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, RactorClusterMessage)]
 pub enum TaskMsg {
     /// Sent by axum handlers to execute mutations on the actor's state.
+    #[rpc]
     Advance {
         req: AdvanceRequest,
         reply: RpcReplyPort<AdvanceResponse>,
     },
+    #[rpc]
     WriteCoveragePlan {
         req: WriteCoveragePlanRequest,
         reply: RpcReplyPort<WriteCoveragePlanResponse>,
     },
+    #[rpc]
     RecordAttempt {
         req: RecordAttemptRequest,
         reply: RpcReplyPort<RecordAttemptResponse>,
     },
+    #[rpc]
     RecordOrient {
         req: RecordOrientRequest,
         reply: RpcReplyPort<RecordOrientResponse>,
     },
+    #[rpc]
     Halt {
         req: HaltRequest,
         reply: RpcReplyPort<HaltResponse>,
     },
+    #[rpc]
     GetState {
         reply: RpcReplyPort<TaskStateResponse>,
     },
+    #[rpc]
     LoadTask {
         req: LoadTaskRequest,
         reply: RpcReplyPort<LoadTaskResponse>,
     },
+    #[rpc]
     DeferTask {
         req: DeferTaskRequest,
         reply: RpcReplyPort<DeferTaskResponse>,

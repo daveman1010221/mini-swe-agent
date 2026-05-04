@@ -20,3 +20,5 @@ chrono.workspace = true
 rcgen.workspace = true
 rustls.workspace = true
 axum-server.workspace = true
+ractor_cluster = { workspace = true }
+ractor_cluster_derive = { workspace = true }

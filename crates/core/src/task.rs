@@ -8,10 +8,11 @@
 //! used only to load the initial mission briefing.
 
 use serde::{Deserialize, Serialize};
+use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 
 // ── Coverage plan ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct PlannedTest {
     pub name: String,
     #[serde(rename = "type")]
@@ -19,10 +20,10 @@ pub struct PlannedTest {
     pub rationale: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct CoveragePlan {
     pub public_interfaces: Vec<String>,
-    pub failure_modes: Vec<serde_json::Value>,
+    pub failure_modes: Vec<String>,
     pub boundary_conditions: Vec<String>,
     pub serde_required: bool,
     pub rkyv_required: bool,
@@ -33,7 +34,7 @@ pub struct CoveragePlan {
 
 // ── Orient record ─────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct OrientRecord {
     pub step: String,
     pub observed: String,
@@ -45,7 +46,7 @@ pub struct OrientRecord {
 
 // ── Attempt record ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct AttemptRecord {
     pub action: String,
     pub result: String,
@@ -54,7 +55,7 @@ pub struct AttemptRecord {
 
 // ── Current task ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct RuntimeTask {
     /// Crate name (serialized as "crate" for JSON compat with nushell tools)
     #[serde(rename = "crate")]
@@ -103,7 +104,7 @@ impl RuntimeTask {
 
 // ── Completed task ────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct CompletedTask {
     #[serde(rename = "crate")]
     pub crate_name: String,
@@ -115,7 +116,7 @@ pub struct CompletedTask {
 
 // ── Halted task ───────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct HaltedTask {
     #[serde(rename = "crate")]
     pub crate_name: String,
@@ -125,7 +126,7 @@ pub struct HaltedTask {
     pub halted_at: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct DeferredTask {
     #[serde(rename = "crate")]
     pub crate_name: String,
@@ -176,12 +177,12 @@ impl RuntimeTaskFile {
 // ── RPC request/response types ────────────────────────────────────────────────
 // These are the HTTP request/response bodies for the TaskActor RPC server.
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct AdvanceRequest {
     pub verification: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct AdvanceResponse {
     pub ok: bool,
     pub advanced: bool,
@@ -191,10 +192,10 @@ pub struct AdvanceResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct WriteCoveragePlanRequest {
     pub public_interfaces: Vec<String>,
-    pub failure_modes: Vec<serde_json::Value>,
+    pub failure_modes: Vec<String>,
     pub boundary_conditions: Vec<String>,
     pub serde_required: bool,
     pub rkyv_required: bool,
@@ -202,7 +203,7 @@ pub struct WriteCoveragePlanRequest {
     pub planned_tests: Vec<PlannedTest>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct WriteCoveragePlanResponse {
     pub ok: bool,
     pub plan_recorded: bool,
@@ -210,13 +211,13 @@ pub struct WriteCoveragePlanResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct RecordAttemptRequest {
     pub action: String,
     pub result: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct RecordAttemptResponse {
     pub ok: bool,
     pub step_attempts: u32,
@@ -225,14 +226,14 @@ pub struct RecordAttemptResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct RecordOrientRequest {
     pub observed: String,
     pub decision: String,
     pub blockers: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct RecordOrientResponse {
     pub ok: bool,
     pub recorded: bool,
@@ -241,24 +242,24 @@ pub struct RecordOrientResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct HaltRequest {
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct HaltResponse {
     pub ok: bool,
     pub halted: bool,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct LoadTaskRequest {
     // No fields — pops the next pending task, no input required
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct LoadTaskResponse {
     pub ok: bool,
     pub has_task: bool,
@@ -269,13 +270,13 @@ pub struct LoadTaskResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct DeferTaskRequest {
     pub crate_name: String,
     pub reason: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct DeferTaskResponse {
     pub ok: bool,
     pub deferred: bool,
@@ -284,14 +285,14 @@ pub struct DeferTaskResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct TaskStateResponse {
     pub ok: bool,
     pub data: Option<TaskStateData>,
     pub error: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
 pub struct TaskStateData {
     pub has_task: bool,
     pub crate_name: Option<String>,

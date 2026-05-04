@@ -26,6 +26,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use ractor::port::OutputPort;
+use ractor_cluster::RactorMessage;
 use tokio::io::AsyncWriteExt;
 use tracing::{info, warn};
 
@@ -33,7 +34,7 @@ use mswea_core::event::Event;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
-#[derive(Debug)]
+#[derive(Debug, RactorMessage)]
 pub enum EventLoggerMsg {
     /// An event arrived from the bus — write it to disk.
     Log(Event),

@@ -7,6 +7,7 @@
 use rkyv::{Archive, Deserialize as RkyvDeserialize, Serialize as RkyvSerialize};
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
+use ractor_cluster::RactorMessage;
 
 use crate::capability::CommandCapability;
 use crate::error::ExitStatus;
@@ -14,7 +15,7 @@ use crate::observation::ObservationArchive;
 use crate::tool_call::ToolCall;
 
 /// A single immutable event in the system log.
-#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Archive, RkyvSerialize, RkyvDeserialize, RactorMessage)]
 pub struct Event {
     /// Sortable unique ID with embedded timestamp.
     pub id: String,

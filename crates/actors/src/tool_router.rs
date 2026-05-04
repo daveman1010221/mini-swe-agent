@@ -13,6 +13,7 @@
 use std::sync::Arc;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef, RpcReplyPort};
+use ractor_cluster::RactorMessage;
 use tokio::sync::RwLock;
 use tracing::instrument;
 
@@ -28,6 +29,7 @@ use crate::event_bus::EventBus;
 
 // ── Messages ──────────────────────────────────────────────────────────────────
 
+#[derive(RactorMessage)]
 pub struct RouteRequest {
     pub call: ToolCall,
     pub step: u32,
