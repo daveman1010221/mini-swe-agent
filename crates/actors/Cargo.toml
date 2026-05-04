@@ -15,10 +15,6 @@ tracing.workspace = true
 serde_json.workspace = true
 minijinja.workspace = true
 nu-protocol.workspace = true
-axum.workspace = true
 chrono.workspace = true
-rcgen.workspace = true
-rustls.workspace = true
-axum-server.workspace = true
 ractor_cluster = { workspace = true }
 ractor_cluster_derive = { workspace = true }

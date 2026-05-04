@@ -35,27 +35,6 @@ use actors::constraint_checker::ConstraintCheckerMsg;
 use actors::policy_messages::NormalizeRequest;
 use actors::tool_router::RouteRequest;
 
-use rcgen::generate_simple_self_signed;
-
-struct RpcCerts {
-    ca_cert_pem: String,
-    server_cert_pem: String,
-    server_key_pem: String,
-}
-
-fn generate_rpc_certs() -> anyhow::Result<RpcCerts> {
-    let ca = generate_simple_self_signed(vec!["mswea-ca".to_string()])
-        .context("Generating CA cert")?;
-    let server = generate_simple_self_signed(vec!["127.0.0.1".to_string()])
-        .context("Generating server cert")?;
-
-    Ok(RpcCerts {
-        ca_cert_pem:     ca.cert.pem(),
-        server_cert_pem: server.cert.pem(),
-        server_key_pem:  server.key_pair.serialize_pem(),
-    })
-}
-
 /// Live handles to the running actor system.
 pub struct ActorSystem {
     pub model: ModelActor,
@@ -181,12 +160,7 @@ pub async fn boot_actor_system(
 
     register_builtins(&orch_ref).context("Registering builtin capabilities")?;
 
-    let rpc_certs = generate_rpc_certs().context("Generating RPC mTLS certs")?;
-
     let mut shell_env = config.shell.env.clone();
-    shell_env.insert("MSWEA_RPC_BASE".into(), "http://127.0.0.1:8000".to_string());
-    shell_env.insert("MSWEA_RPC_PORT".into(), "8000".to_string());
-    shell_env.insert("MSWEA_CA_CERT".into(),     rpc_certs.ca_cert_pem.clone());
     shell_env.insert("WORKSPACE_ROOT".into(), config.shell.cwd.clone());
     shell_env.insert("MSWEA_CLUSTER_ADDR".into(), format!("127.0.0.1:{cluster_port}"));
     shell_env.insert("MSWEA_CLUSTER_COOKIE".into(), cluster_cookie.clone());
@@ -205,13 +179,9 @@ pub async fn boot_actor_system(
         TaskActor,
         TaskActorArgs {
             taskfile_path: task_file_path,
-            rpc_port: 8000,
             constraint_checker: constraint_checker_ref.clone(),
             orchestrator: orch_ref.clone(),
             event_bus: Arc::clone(&event_bus),
-            server_cert_pem: rpc_certs.server_cert_pem,
-            server_key_pem: rpc_certs.server_key_pem,
-            ca_cert_pem: rpc_certs.ca_cert_pem,
         },
     )
     .await

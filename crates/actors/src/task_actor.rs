@@ -1,23 +1,16 @@
 //! TaskActor — authoritative owner of agent task state.
 //!
-//! Owns RuntimeTaskFile in memory, exposes an axum HTTP RPC server
-//! on localhost:8000 for nushell tools to query and mutate state.
+//! Owns RuntimeTaskFile in memory. State is mutated via ractor cluster
+//! messages from nu-plugin-mswea — no HTTP server.
 //!
 //! On every state mutation:
 //!   1. Update in-memory state
 //!   2. call!(constraint_checker, UpdateContext) — blocks for ack
 //!   3. call!(orchestrator, UpdatePlaybookStep) — blocks for ack  
 //!   4. Write backing JSON file
-//!   5. Return response to HTTP caller
+//!   5. Return response to caller
 
 use std::path::PathBuf;
-
-use axum::{
-    extract::State,
-    response::Json,
-    routing::post,
-    Router,
-};
 
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tracing::info;
@@ -42,8 +35,6 @@ use crate::{
     event_bus::EventBus,
 };
 
-use tokio::net::TcpListener;
-
 pub use mswea_core::task::TaskMsg;
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -52,13 +43,9 @@ pub struct TaskActor;
 
 pub struct TaskActorArgs {
     pub taskfile_path: PathBuf,
-    pub rpc_port: u16,
     pub constraint_checker: ActorRef<ConstraintCheckerMsg>,
     pub orchestrator: ActorRef<OrchestratorMsg>,
     pub event_bus: EventBus,
-    pub server_cert_pem: String,
-    pub server_key_pem: String,
-    pub ca_cert_pem: String,
 }
 
 pub struct TaskActorState {
@@ -68,8 +55,6 @@ pub struct TaskActorState {
     pub orchestrator: ActorRef<OrchestratorMsg>,
     pub event_bus: EventBus,
 }
-
-pub type TaskRpcState = ActorRef<TaskMsg>;
 
 // ── Actor impl ────────────────────────────────────────────────────────────────
 
@@ -87,31 +72,6 @@ impl Actor for TaskActor {
 
         let taskfile = RuntimeTaskFile::load(&args.taskfile_path)
             .map_err(|e| ActorProcessingErr::from(format!("Failed to load taskfile: {e}")))?;
-
-        // Spawn axum RPC server — passes actor ref to handlers
-        let actor_ref = myself.clone();
-        let port = args.rpc_port;
-
-        tokio::spawn(async move {
-            let app = Router::new()
-                .route("/task/state",               post(handle_get_state))
-                .route("/task/advance",             post(handle_advance))
-                .route("/task/write-coverage-plan", post(handle_write_coverage_plan))
-                .route("/task/record-attempt",      post(handle_record_attempt))
-                .route("/task/record-orient",       post(handle_record_orient))
-                .route("/task/halt",                post(handle_halt))
-                .route("/task/load",                post(handle_load_task))
-                .route("/task/defer",               post(handle_defer_task))
-                .with_state(actor_ref);
-
-            let listener = TcpListener::bind(format!("127.0.0.1:{port}"))
-                .await
-                .expect("TaskActor RPC server failed to bind");
-            info!("TaskActor RPC server listening on http://127.0.0.1:{port}");
-            axum::serve(listener, app)
-                .await
-                .expect("TaskActor RPC server failed");
-        });
 
         Ok(TaskActorState {
             taskfile,
@@ -169,141 +129,6 @@ impl Actor for TaskActor {
         }
         Ok(())
     }
-}
-
-// ── Axum HTTP handlers (thin shims → actor via ractor RPC) ────────────────────
-
-async fn handle_get_state(
-    State(actor): State<TaskRpcState>,
-) -> Json<TaskStateResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::GetState { reply }
-    ).unwrap_or_else(|e| TaskStateResponse {
-        ok: false,
-        data: None,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_advance(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<AdvanceRequest>,
-) -> Json<AdvanceResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::Advance { req, reply }
-    ).unwrap_or_else(|e| AdvanceResponse {
-        ok: false,
-        advanced: false,
-        previous_step: None,
-        current_step: None,
-        task_completed: false,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_write_coverage_plan(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<WriteCoveragePlanRequest>,
-) -> Json<WriteCoveragePlanResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::WriteCoveragePlan { req, reply }
-    ).unwrap_or_else(|e| WriteCoveragePlanResponse {
-        ok: false,
-        plan_recorded: false,
-        planned_count: 0,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_record_attempt(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<RecordAttemptRequest>,
-) -> Json<RecordAttemptResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::RecordAttempt { req, reply }
-    ).unwrap_or_else(|e| RecordAttemptResponse {
-        ok: false,
-        step_attempts: 0,
-        budget_remaining: 0,
-        budget_exhausted: false,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_record_orient(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<RecordOrientRequest>,
-) -> Json<RecordOrientResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::RecordOrient { req, reply }
-    ).unwrap_or_else(|e| RecordOrientResponse {
-        ok: false,
-        recorded: false,
-        step: String::new(),
-        budget_remaining: 0,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_halt(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<HaltRequest>,
-) -> Json<HaltResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::Halt { req, reply }
-    ).unwrap_or_else(|e| HaltResponse {
-        ok: false,
-        halted: false,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_load_task(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<LoadTaskRequest>,
-) -> Json<LoadTaskResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::LoadTask { req, reply }
-    ).unwrap_or_else(|e| LoadTaskResponse {
-        ok: false,
-        has_task: false,
-        crate_name: None,
-        op: None,
-        first_step: None,
-        playbook_found: false,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
-}
-
-async fn handle_defer_task(
-    State(actor): State<TaskRpcState>,
-    Json(req): Json<DeferTaskRequest>,
-) -> Json<DeferTaskResponse> {
-    let result = ractor::call!(
-        actor,
-        |reply| TaskMsg::DeferTask { req, reply }
-    ).unwrap_or_else(|e| DeferTaskResponse {
-        ok: false,
-        deferred: false,
-        crate_name: None,
-        reason: None,
-        error: Some(format!("RPC failed: {e}")),
-    });
-    Json(result)
 }
 
 async fn handle_load_task_msg(

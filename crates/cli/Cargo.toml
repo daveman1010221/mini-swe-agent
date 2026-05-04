@@ -25,4 +25,3 @@ serde_yaml.workspace = true
 anyhow.workspace = true
 dirs.workspace = true
 dotenv.workspace = true
-rcgen.workspace = true
