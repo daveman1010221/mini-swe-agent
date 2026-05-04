@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# task/next.nu
+# task/next.nu — load next pending task via mswea plugin
 #
 # Loads the next pending task into the current slot.
 # If a non-halted current task already exists, returns it.
@@ -10,15 +10,18 @@
 #   nu tools/task/next.nu
 
 def main [] {
-    let base = $env.MSWEA_RPC_BASE? | default "http://127.0.0.1:8000"
-
-    let response = (
-        try {
-            http post $"($base)/task/load" {} --content-type application/json
-        } catch {|err|
-            return { ok: false, data: null, error: $"RPC call failed: ($err.msg)" }
-        }
-    )
-
-    $response
+    let result = (mswea rpc task-state)
+    if not $result.ok {
+        return { ok: false, has_task: false, error: $result.error }
+    }
+    let d = $result.data
+    {
+        ok: true,
+        has_task: $d.has_task,
+        crate_name: $d.crate_name,
+        op: $d.op,
+        first_step: $d.step,
+        playbook_found: $d.has_task,
+        error: null
+    }
 }

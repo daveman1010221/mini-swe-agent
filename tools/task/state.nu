@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# task/state.nu
+# task/state.nu — query current task state via mswea plugin
 #
 # The first call in every OBSERVE phase.
 # Returns the complete current task state including playbook position.
@@ -9,15 +9,9 @@
 #   nu tools/task/state.nu
 
 def main [] {
-    let base = if ("MSWEA_RPC_BASE" in $env) { $env.MSWEA_RPC_BASE } else { "http://127.0.0.1:8000" }
-
-    let result = (
-        try {
-            http post $"($base)/task/state" ({} | to json) --content-type application/json
-        } catch {|err|
-            return { ok: false, data: null, error: ($err | to json) }
-        }
-    )
-
-    $result
+    let result = (mswea rpc task-state)
+    if not $result.ok {
+        return { ok: false, data: null, error: $result.error }
+    }
+    { ok: true, data: $result.data, error: null }
 }

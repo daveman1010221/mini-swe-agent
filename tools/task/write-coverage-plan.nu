@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# task/write-coverage-plan.nu
+# task/write-coverage-plan.nu — record coverage plan via mswea plugin
 #
 # Called during ORIENT phase before writing any tests.
 # Documents the agent's reasoning about what needs to be tested.
@@ -13,7 +13,7 @@
 #     --planned-tests '[{"name":"test_foo","type":"serde_roundtrip","rationale":"..."}]'
 
 def main [
-    --taskfile: path = "",               # ignored — kept for backwards compat
+    --taskfile: path = "",
     --public-interfaces: string = "[]",
     --failure-modes: string = "[]",
     --boundary-conditions: string = "[]",
@@ -22,12 +22,11 @@ def main [
     --existing-tests: int = 0,
     --planned-tests: string = "[]",
 ] {
-    # Coerce bare strings into PlannedTest records
     let planned = (
         try { $planned_tests | from json } catch { [] }
         | each {|t|
             if ($t | describe) == "string" {
-                {name: $t, type: "unit", rationale: "auto-coerced from string — provide proper rationale"}
+                {name: $t, type: "unit", rationale: "auto-coerced from string"}
             } else {
                 $t
             }
@@ -35,20 +34,10 @@ def main [
     )
 
     if ($planned | length) == 0 {
-        return {
-            ok: false,
-            data: null,
-            error: "planned-tests cannot be empty — coverage plan requires at least one planned test"
-        }
+        return { ok: false, data: null, error: "planned-tests cannot be empty" }
     }
 
-    let base = if ("MSWEA_RPC_BASE" in $env) {
-        $env.MSWEA_RPC_BASE
-    } else {
-        "http://127.0.0.1:8000"
-    }
-
-    let body = {
+    let plan = {
         public_interfaces: (try { $public_interfaces | from json } catch { [] }),
         failure_modes: (try { $failure_modes | from json } catch { [] }),
         boundary_conditions: (try { $boundary_conditions | from json } catch { [] }),
@@ -58,17 +47,7 @@ def main [
         planned_tests: $planned,
     }
 
-    let result = (
-        try {
-            http post $"($base)/task/write-coverage-plan" ($body | to json) --content-type application/json
-        } catch {|err|
-            return {
-                ok: false,
-                data: null,
-                error: $"TaskActor RPC failed: ($err.msg) — check that planned_tests contains objects with name/type/rationale fields"
-            }
-        }
-    )
+    let result = (mswea rpc write-coverage-plan $plan)
 
     if not $result.ok {
         return { ok: false, data: null, error: $result.error }

@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# task/record-attempt.nu
+# task/record-attempt.nu — record a step attempt via mswea plugin
 #
 # Called after every ACT phase. Increments step_attempts.
 # Agent calls this BEFORE checking if the attempt succeeded.
@@ -11,25 +11,12 @@
 #     --result "2 errors: E0308 type mismatch in tests/unit.rs"
 
 def main [
-    --action: string,    # what tool was called
-    --result: string     # brief description of outcome
+    --action: string = "",
+    --result: string = "",
 ] {
-    if ($action | str length) == 0 {
-        return { ok: false, data: null, error: "missing required flag: --action" }
+    let res = (mswea rpc record-attempt --action $action --result $result)
+    if not $res.ok {
+        return { ok: false, step_attempts: 0, budget_remaining: 0, budget_exhausted: false, error: $res.error }
     }
-
-    let base = $env.MSWEA_RPC_BASE? | default "http://127.0.0.1:8000"
-
-    let response = (
-        try {
-            http post $"($base)/task/record-attempt" {
-                action: $action,
-                result: $result,
-            } --content-type application/json
-        } catch {|err|
-            return { ok: false, data: null, error: $"RPC call failed: ($err.msg)" }
-        }
-    )
-
-    $response
+    { ok: true, step_attempts: $res.step_attempts, budget_remaining: $res.budget_remaining, budget_exhausted: $res.budget_exhausted, error: null }
 }

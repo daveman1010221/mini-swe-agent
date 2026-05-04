@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# meta/orient-report.nu
+# meta/orient-report.nu — record orient step via mswea plugin
 #
 # Called during ORIENT phase to record the agent's reasoning before acting.
 # Documents what was observed, what decision was made, and any blockers.
@@ -15,31 +15,19 @@
 #     --blockers ""
 
 def main [
-    --observed: string = "",   # what the OBSERVE phase revealed
-    --decision: string = "",   # what ACT will do and why
-    --blockers: string = "",   # any blocking issues discovered (empty if none)
+    --observed: string = "",
+    --decision: string = "",
+    --blockers: string = "",
 ] {
-    if ($observed | str length) == 0 {
-        return { ok: false, data: null, error: "missing required flag: --observed" }
+    let result = (mswea rpc record-orient {
+        observed: $observed
+        decision: $decision
+        blockers: (if ($blockers | str length) > 0 { $blockers } else { null })
+    })
+
+    if not $result.ok {
+        return { ok: false, recorded: false, step: "", budget_remaining: 0, error: $result.error }
     }
 
-    if ($decision | str length) == 0 {
-        return { ok: false, data: null, error: "missing required flag: --decision" }
-    }
-
-    let base = $env.MSWEA_RPC_BASE? | default "http://127.0.0.1:8000"
-
-    let response = (
-        try {
-            http post $"($base)/task/record-orient" {
-                observed: $observed,
-                decision: $decision,
-                blockers: (if ($blockers | str length) > 0 { $blockers } else { null }),
-            } --content-type application/json
-        } catch {|err|
-            return { ok: false, data: null, error: $"RPC call failed: ($err.msg)" }
-        }
-    )
-
-    $response
+    { ok: true, recorded: $result.recorded, step: $result.step, budget_remaining: $result.budget_remaining, error: null }
 }

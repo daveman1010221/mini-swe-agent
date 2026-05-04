@@ -1,5 +1,5 @@
 #!/usr/bin/env nu
-# task/halt.nu
+# task/halt.nu — halt current task via mswea plugin
 #
 # Called when the agent cannot proceed.
 # Records the reason. Human must intervene before work resumes.
@@ -9,23 +9,11 @@
 #   nu tools/task/halt.nu --reason "compile/check failed 3 times with same error"
 
 def main [
-    --reason: string,      # specific, actionable description of why
+    --reason: string = "no reason provided"
 ] {
-    if ($reason | str length) == 0 {
-        return { ok: false, data: null, error: "missing required flag: --reason" }
+    let result = (mswea rpc halt --reason $reason)
+    if not $result.ok {
+        return { ok: false, data: null, error: $result.error }
     }
-
-    let base = $env.MSWEA_RPC_BASE? | default "http://127.0.0.1:8000"
-
-    let response = (
-        try {
-            http post $"($base)/task/halt" {
-                reason: $reason,
-            } --content-type application/json
-        } catch {|err|
-            return { ok: false, data: null, error: $"RPC call failed: ($err.msg)" }
-        }
-    )
-
-    $response
+    { ok: true, halted: $result.halted, error: null }
 }
