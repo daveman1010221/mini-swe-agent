@@ -113,6 +113,11 @@ impl NushellSession {
         warn!("Resetting shell stack");
         self.stack = Stack::new();
         self.stack.add_env_var("PWD".into(), Value::string(&self.cwd, Span::unknown()));
+        // Re-inject PATH — without this, external commands like cargo are not found
+        // after a stack reset because PATH is not in self.env.
+        if let Ok(path) = std::env::var("PATH") {
+            self.stack.add_env_var("PATH".into(), Value::string(path, Span::unknown()));
+        }
         for (k, v) in &self.env {
             std::env::set_var(k, v);
             self.stack.add_env_var(k.clone(), Value::string(v.clone(), Span::unknown()));
