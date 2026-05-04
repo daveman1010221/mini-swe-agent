@@ -19,6 +19,9 @@ use mswea_core::{
     toolbox::{ToolRegistry, ShellPolicy},
 };
 use ractor::{Actor, ActorRef};
+use ractor_cluster::{NodeServer, node::NodeConnectionMode};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::{info, warn};
 
@@ -64,6 +67,7 @@ pub struct ActorSystem {
     pub system_prompt: Arc<RwLock<String>>,
     pub event_logger: Option<ActorRef<actors::EventLoggerMsg>>,
     pub toolbox: ActorRef<ToolboxMsg>,
+    pub cluster_node: ActorRef<ractor_cluster::NodeServerMessage>,
 }
 
 pub async fn boot_actor_system(
@@ -74,6 +78,32 @@ pub async fn boot_actor_system(
     mswea_root: PathBuf,
 ) -> Result<ActorSystem> {
     info!("Booting actor system");
+
+    // ── Cluster node ─────────────────────────────────────────────────────────
+    // Start the mswea-core ractor cluster node. The nu-plugin-mswea process
+    // will connect to this node to resolve ActorRefs to TaskActor and
+    // ConstraintCheckerActor without HTTP.
+    //
+    // Port 9000 is the cluster port — distinct from the legacy RPC port 8000.
+    // Cookie is a shared secret between the mswea-core and mswea-plugin nodes.
+    // We use Isolated mode — the plugin connects to us, we don't discover peers.
+    let cluster_cookie = "mswea-cluster-cookie".to_string();
+    let cluster_port: u16 = 9000;
+    let (cluster_node, _cluster_handle) = Actor::spawn(
+        Some("mswea-core-node".into()),
+        NodeServer::new(
+            cluster_port,
+            cluster_cookie.clone(),
+            "mswea-core".to_string(),
+            "localhost".to_string(),
+            None, // IncomingEncryptionMode::Raw — localhost only
+            Some(NodeConnectionMode::Isolated),
+        ).with_listen_addr(IpAddr::V4(Ipv4Addr::LOCALHOST)),
+        (),
+    )
+    .await
+    .context("Spawning cluster NodeServer")?;
+    info!(port = cluster_port, "Cluster node started: mswea-core");
 
     // ── Event bus ────────────────────────────────────────────────────────────
     let event_bus = new_event_bus();
@@ -158,6 +188,8 @@ pub async fn boot_actor_system(
     shell_env.insert("MSWEA_RPC_PORT".into(), "8000".to_string());
     shell_env.insert("MSWEA_CA_CERT".into(),     rpc_certs.ca_cert_pem.clone());
     shell_env.insert("WORKSPACE_ROOT".into(), config.shell.cwd.clone());
+    shell_env.insert("MSWEA_CLUSTER_ADDR".into(), format!("127.0.0.1:{cluster_port}"));
+    shell_env.insert("MSWEA_CLUSTER_COOKIE".into(), cluster_cookie.clone());
     if let Some(ref tf) = config.agent.task_file {
         shell_env.insert("TASKFILE".into(), tf.display().to_string());
         tracing::info!(taskfile = %tf.display(), "Injecting TASKFILE into shell env");
@@ -258,6 +290,7 @@ pub async fn boot_actor_system(
         system_prompt,
         event_logger,
         toolbox: toolbox_ref,
+        cluster_node,
     })
 }
 
@@ -272,5 +305,6 @@ pub async fn shutdown_actor_system(system: ActorSystem) {
         logger.stop(None);
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     }
+    system.cluster_node.stop(None);
     let _ = system;
 }

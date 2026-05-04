@@ -735,6 +735,7 @@ dependencies = [
  "models",
  "mswea-core",
  "ractor",
+ "ractor_cluster",
  "rcgen",
  "serde",
  "serde_json",
