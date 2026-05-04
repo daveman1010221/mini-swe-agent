@@ -27,9 +27,8 @@ ractor = "0.15"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 serde_yaml = "0.9"
-# rkyv 0.8: derive macros are built in, no feature flag needed
-# bytecheck enables runtime validation of archived bytes
-rkyv = { version = "0.8", features = ["bytecheck"] }
+
+rkyv = { version = "0.8" }
 
 # templating
 minijinja = { version = "2", features = ["loader"] }
@@ -69,7 +68,6 @@ dirs = "5"
 dotenv = "0.15"
 
 proptest = "1"
-rkyv = { version = "0.8" }
 
 axum = { version = "0.7" }
 tokio-util = { version = "0.7" }
