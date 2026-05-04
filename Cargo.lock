@@ -3054,6 +3054,7 @@ dependencies = [
 name = "nu-plugin-mswea"
 version = "0.1.0"
 dependencies = [
+ "actors",
  "anyhow",
  "mswea-core",
  "nu-plugin",

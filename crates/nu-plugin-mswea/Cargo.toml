@@ -14,6 +14,7 @@ name = "nu_plugin_mswea"
 path = "src/main.rs"
 
 [dependencies]
+actors = { path = "../actors" }
 mswea-core = { path = "../core" }
 
 # nushell plugin

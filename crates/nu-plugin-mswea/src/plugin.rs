@@ -5,6 +5,10 @@
 //! the `plugin` reference passed to each command's `run()` method.
 
 use nu_plugin::{Plugin, PluginCommand};
+use std::sync::Arc;
+use ractor::ActorRef;
+use actors::task_actor::TaskMsg;
+use actors::constraint_checker::ConstraintCheckerMsg;
 
 use crate::commands::{
     cargo::{MsweaCargoCheck, MsweaCargoTest},
@@ -19,14 +23,19 @@ use crate::commands::{
 /// Holds ActorRefs to the ractor cluster nodes. Initialized once at plugin
 /// startup and reused for the lifetime of the plugin process / session.
 pub struct MsweaPlugin {
-    // TODO: ActorRef<TaskMsg>
-    // TODO: ActorRef<ConstraintCheckerMsg>
-    // TODO: workspace_root: PathBuf
+    /// Direct ActorRef to TaskActor on the mswea-core cluster node.
+    /// None if the cluster connection has not yet been established.
+    pub task_actor: Option<ActorRef<TaskMsg>>,
+    /// Direct ActorRef to ConstraintCheckerActor on the mswea-core node.
+    pub constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
 }
 
 impl MsweaPlugin {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(
+        task_actor: Option<ActorRef<TaskMsg>>,
+        constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
+    ) -> Self {
+        Self { task_actor, constraint_checker }
     }
 }
 
