@@ -17,7 +17,7 @@ impl SimplePluginCommand for MsweaRpcWriteCoveragePlan {
 
     fn signature(&self) -> Signature {
         Signature::build("mswea rpc write-coverage-plan")
-            .input_output_type(Type::Record(vec![].into()), Type::Record(vec![].into()))
+            .input_output_type(Type::Nothing, Type::Record(vec![].into()))
             .required("plan", SyntaxShape::Record(vec![]),
                 "Coverage plan record with planned_tests, serde_required, rkyv_required fields")
             .category(Category::Custom("mswea".into()))

@@ -43,7 +43,7 @@ The input record must contain:
 
     fn signature(&self) -> Signature {
         Signature::build("mswea rpc record-orient")
-            .input_output_type(Type::Record(vec![].into()), Type::Record(vec![].into()))
+            .input_output_type(Type::Nothing, Type::Record(vec![].into()))
             .required(
                 "report",
                 SyntaxShape::Record(vec![]),
