@@ -10,7 +10,7 @@
 
 use nu_plugin::{MsgPackSerializer, serve_plugin};
 use ractor::{Actor, ActorRef};
-use ractor_cluster::{NodeServer, client_connect, node::NodeConnectionMode};
+use ractor_cluster::{NodeServer, client_connect, node::{NodeConnectionMode, NodeServerSessionInformation}};
 use std::net::{IpAddr, Ipv4Addr};
 use tokio::time::{Duration, sleep};
 
@@ -25,14 +25,15 @@ fn main() {
     let cluster_cookie = std::env::var("MSWEA_CLUSTER_COOKIE")
         .unwrap_or_else(|_| "mswea-cluster-cookie".to_string());
 
-    // Build a Tokio runtime for cluster operations.
-    // serve_plugin() takes over the main thread after this.
     let rt = tokio::runtime::Runtime::new()
         .expect("Failed to create Tokio runtime");
 
     let rt_handle = rt.handle().clone();
 
     let plugin = rt.block_on(async {
+        use std::sync::Arc;
+        use tokio::sync::Notify;
+
         // Start our node server on an ephemeral port (0 = OS picks)
         let (node_server, _handle) = Actor::spawn(
             Some("mswea-plugin-node".into()),
@@ -49,33 +50,64 @@ fn main() {
         .await
         .expect("Failed to spawn plugin NodeServer");
 
+        // Subscribe to node events so we know when Ready handshake completes
+        let notify = Arc::new(Notify::new());
+        let notify_clone = Arc::clone(&notify);
+
+        struct ReadyNotifier(Arc<Notify>);
+        impl ractor_cluster::NodeEventSubscription for ReadyNotifier {
+            fn node_session_opened(&self, _: NodeServerSessionInformation) {}
+            fn node_session_disconnected(&self, _: NodeServerSessionInformation) {}
+            fn node_session_authenicated(&self, _: NodeServerSessionInformation) {}
+            fn node_session_ready(&self, _: NodeServerSessionInformation) {
+                self.0.notify_one();
+            }
+        }
+
+        node_server.cast(ractor_cluster::NodeServerMessage::SubscribeToEvents {
+            id: "ready-waiter".to_string(),
+            subscription: Box::new(ReadyNotifier(notify_clone)),
+        }).expect("Failed to subscribe to node events");
+
         // Connect to the mswea-core node
         client_connect(&node_server, &cluster_addr)
             .await
             .expect("Failed to connect to mswea-core cluster node");
 
-        // Wait for cluster registry to sync — poll until task-actor is visible
-        // or timeout after 5 seconds
-        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        // Wait for Ready handshake to complete (with timeout)
+        tokio::time::timeout(
+            Duration::from_secs(10),
+            notify.notified(),
+        )
+        .await
+        .expect("Cluster Ready handshake timed out after 10s");
+
+        // Wait for PG group to be synced from mswea-core
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
         loop {
-            let task_actor: Option<ActorRef<TaskMsg>> =
-                ActorRef::where_is("task-actor".to_string());
-            if task_actor.is_some() || tokio::time::Instant::now() >= deadline {
+            let members = ractor::pg::get_members(&"mswea-task-actors".to_string());
+            if !members.is_empty() {
                 break;
             }
-            sleep(Duration::from_millis(100)).await;
+            if tokio::time::Instant::now() >= deadline {
+                panic!("mswea-task-actors PG group not visible after 10s");
+            }
+            sleep(Duration::from_millis(50)).await;
         }
 
-        // Resolve remote ActorRefs by name from the cluster registry
-        let task_actor: Option<ActorRef<TaskMsg>> =
-            ActorRef::where_is("task-actor".to_string());
-        let constraint_checker: Option<ActorRef<ConstraintCheckerMsg>> =
-            ActorRef::where_is("constraint-checker".to_string());
+        let task_actor: Option<ActorRef<TaskMsg>> = ractor::pg::get_members(&"mswea-task-actors".to_string())
+            .into_iter()
+            .next()
+            .map(|cell| cell.into());
+
+        let constraint_checker: Option<ActorRef<ConstraintCheckerMsg>> = ractor::pg::get_members(&"mswea-constraint-checkers".to_string())
+            .into_iter()
+            .next()
+            .map(|cell| cell.into());
 
         MsweaPlugin::new(task_actor, constraint_checker, rt_handle)
     });
 
     // serve_plugin takes over — handles the nushell plugin protocol
-    // on stdin/stdout or local socket, depending on how nushell spawned us.
     serve_plugin(&plugin, MsgPackSerializer);
 }

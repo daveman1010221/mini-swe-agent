@@ -26,11 +26,6 @@ build:
     cargo build --workspace
     ln -sf /var/cache/cargo-target/ /workspace/target
 
-# Build all workspace crates (release)
-build-release:
-    cargo build --workspace --release
-    ln -sf /var/cache/cargo-target/ /workspace/target
-
 # Build a specific crate
 # Usage: just build-crate mswea-core
 build-crate crate:
@@ -346,8 +341,21 @@ agent-clean:
     git checkout Cargo.toml
     git checkout crates/core/Cargo.toml
 
-# Clean and run the agent
-agent-run: agent-clean build-release
+# Build all workspace crates (release)
+agent-build:
+    cargo build --workspace --release
+    ln -sf /var/cache/cargo-target/ /workspace/target
+
+# Clean, build, and run the agent
+agent-run:
+    /var/cache/cargo-target/release/mswea --task-file /workspace/agent-task.json --output /tmp/mswea-core-tests
+
+# Clean, build, and run the agent
+agent-clean-run: agent-clean
+    /var/cache/cargo-target/release/mswea --task-file /workspace/agent-task.json --output /tmp/mswea-core-tests
+
+# Clean, build, and run the agent
+agent-clean-build-run: agent-clean agent-build
     /var/cache/cargo-target/release/mswea --task-file /workspace/agent-task.json --output /tmp/mswea-core-tests
 
 # ── Dhall rendering ────────────────────────────────────────────────────────────

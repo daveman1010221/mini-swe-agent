@@ -123,6 +123,8 @@ pub async fn boot_actor_system(
     .await
     .context("Spawning ConstraintCheckerActor")?;
 
+    ractor::pg::join("mswea-constraint-checkers".to_string(), vec![constraint_checker_ref.get_cell()]);
+
     // ── ArgNormalizerActor ────────────────────────────────────────────────────
     let (arg_normalizer_ref, _norm_handle) = Actor::spawn(
         Some("arg-normalizer".into()),
@@ -187,6 +189,10 @@ pub async fn boot_actor_system(
     .await
     .context("Spawning TaskActor")?;
     info!("TaskActor: ready, RPC on :8000");
+
+    info!("TaskActor supports_remoting: {}", task_actor_ref.get_cell().supports_remoting());
+
+    ractor::pg::join("mswea-task-actors".to_string(), vec![task_actor_ref.get_cell()]);
 
     // ── ToolboxActor ─────────────────────────────────────────────────────────
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
