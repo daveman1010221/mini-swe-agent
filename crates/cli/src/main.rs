@@ -418,5 +418,13 @@ fn load_skills() -> String {
 }
 
 fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
+    if s.len() <= max {
+        s
+    } else {
+        let mut boundary = max;
+        while !s.is_char_boundary(boundary) {
+            boundary -= 1;
+        }
+        &s[..boundary]
+    }
 }

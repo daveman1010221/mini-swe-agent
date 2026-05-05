@@ -147,10 +147,9 @@ impl SimplePluginCommand for MsweaCargoTest {
 }
 
 fn extract_count(line: &str, label: &str) -> u32 {
-    let pattern = format!("{label}");
     line.split_whitespace()
         .zip(line.split_whitespace().skip(1))
-        .find(|(_, b)| *b == pattern)
+        .find(|(_, b)| b.trim_end_matches(';').trim_end_matches('.') == label)
         .and_then(|(a, _)| a.parse().ok())
         .unwrap_or(0)
 }

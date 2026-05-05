@@ -431,6 +431,15 @@ impl ShellPolicy {
             return Ok(());
         }
 
+        // Reject bash compound commands immediately — nushell doesn't support &&, ||, ;
+        if command.contains(" && ") || command.contains(" || ") || command.contains(" ; ") {
+            return Err(
+                "Shell policy violation: bash compound operators (`&&`, `||`, `;`) are not \
+                 supported in nushell. Run one command at a time. The shell tool executes \
+                 nushell, not bash.".to_string()
+            );
+        }
+
         // Builtins and keywords are always multi-word possible ("str replace", etc.)
         // Check prefix match against allowed_builtins first.
         let is_allowed_builtin = self.allowed_builtins.iter().any(|b| {

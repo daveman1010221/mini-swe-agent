@@ -30,20 +30,24 @@ pub fn read_file(path: &str) -> Result<Observation> {
 /// Write content to a file, creating or overwriting it.
 #[instrument(skip(content))]
 pub fn write_file(path: &str, content: &str) -> Result<Observation> {
-    // Create parent directories if needed.
     if let Some(parent) = Path::new(path).parent() {
         if !parent.as_os_str().is_empty() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("Creating parent dirs for {path}"))?;
         }
     }
-    let original_lines = if Path::new(path).exists() {
-        std::fs::read_to_string(path)
-            .map(|s| s.lines().count() as i64)
-            .unwrap_or(0)
+
+    let original = if Path::new(path).exists() {
+        std::fs::read_to_string(path).unwrap_or_default()
     } else {
-        0
+        String::new()
     };
+
+    if original == content {
+        bail!("write: content is identical to existing file — no changes made");
+    }
+
+    let original_lines = original.lines().count() as i64;
     std::fs::write(path, content)
         .with_context(|| format!("Writing {path}"))?;
     let new_lines = content.lines().count() as i64;

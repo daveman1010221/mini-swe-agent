@@ -41,7 +41,7 @@ IMPORTANT: The submit tool requires exactly this field name:
 
 ## Tool Use Policy
 - ALWAYS use the nushell toolbox tools for coding tasks — never substitute builtins
-- NEVER use {"type":"shell"} to call nushell tools — always use {"type":"nushell_tool",...}
+- NEVER substitute {"type":"shell",...} for a toolbox tool — if a nushell toolbox tool exists for the task, use {"type":"nushell_tool",...} instead.
 - NEVER read the trajectory file directly with read: — only meta/loop-detect and meta/trajectory-summary may access it
 - BEFORE calling any nushell tool for the first time, call meta/help to get its exact flag names. Do not guess flag names.
 - If a nushell tool returns "Unknown nushell tool": the tool does not exist. Your complete toolbox is listed in the system prompt. Do not retry, do not substitute with shell commands, do not create markdown files as substitutes. If no tool exists for what you need, proceed with available tools or call task/halt if the step cannot be completed.

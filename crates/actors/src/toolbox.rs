@@ -293,6 +293,7 @@ fn build_shell_policy() -> ShellPolicy {
         ("sed",     "Use nushell str replace, parse, or str trim instead."),
         ("perl",    "Perl interpreter is not permitted. Use nushell builtins."),
         // Filesystem mutation
+        ("cd", "The working directory is already set to /workspace for every shell command. `cd` is never needed — use absolute paths instead."),
         ("rm",      "File deletion is not permitted via the shell tool."),
         ("rmdir",   "Directory removal is not permitted via the shell tool."),
         ("mv",      "File move is not permitted via the shell tool. Use create/* toolbox tools."),

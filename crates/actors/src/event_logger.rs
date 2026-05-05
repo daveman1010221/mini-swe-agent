@@ -2,11 +2,20 @@
 //!
 //! # Setup (in wiring.rs)
 //!
-//! ```rust
+//! ```no_run
+//! # use std::path::PathBuf;
+//! # use std::sync::Arc;
+//! # use ractor::Actor;
+//! # use ractor::port::OutputPort;
+//! # use actors::{EventLoggerActor, EventLoggerArgs};
+//! # use mswea_core::event::Event;
+//! # #[tokio::main] async fn main() -> anyhow::Result<()> {
+//! # let bus = Arc::new(OutputPort::<Event>::default());
 //! let (logger_ref, _) = Actor::spawn(None, EventLoggerActor, EventLoggerArgs {
 //!     event_bus: bus.clone(),
 //!     output_path: PathBuf::from("trajectory.jsonl"),
 //! }).await?;
+//! # Ok(()) }
 //! ```
 //!
 //! In `pre_start`, the actor subscribes to the `OutputPort<Event>` bus.
