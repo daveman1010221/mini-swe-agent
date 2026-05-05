@@ -22,7 +22,7 @@ use mswea_core::{
     event::{Event, EventKind},
     observation::Observation,
     toolbox::ToolRegistry,
-    ShellPolicy, ToolCall,
+    ShellPolicy, ToolCall, truncate,
 };
 
 use crate::event_bus::EventBus;
@@ -354,16 +354,8 @@ fn args_to_flags(args: &serde_json::Value) -> String {
             let flag = k.replace('_', "-");
             let val = match v {
                 serde_json::Value::String(s) => {
-                    if s.contains(' ') || s.starts_with('[') || s.starts_with('{') {
-                        // Double-quote and escape inner quotes so nushell receives
-                        // the value as a proper string, not a single-quoted literal.
-                        // Single quotes in nushell prevent all interpolation and break
-                        // from json parsing when the value is a JSON array/object.
-                        let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
-                        format!("\"{escaped}\"")
-                    } else {
-                        s.clone()
-                    }
+                    let escaped = s.replace('\\', "\\\\").replace('"', "\\\"");
+                    format!("\"{escaped}\"")
                 }
                 serde_json::Value::Bool(b) if *b => format!("--{flag}"),
                 serde_json::Value::Bool(_)       => return String::new(),
@@ -379,8 +371,4 @@ fn args_to_flags(args: &serde_json::Value) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
 }

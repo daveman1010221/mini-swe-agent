@@ -54,11 +54,11 @@ fn deserialize_args<'de, D: serde::Deserializer<'de>>(d: D) -> Result<String, D:
 impl ToolCall {
     pub fn summary(&self) -> String {
         match self {
-            Self::Shell { command }          => format!("shell: {}", truncate(command, 60)),
+            Self::Shell { command }          => format!("shell: {}", crate::truncate(command, 60)),
             Self::Edit { path, .. }          => format!("edit: {path}"),
             Self::Write { path, .. }         => format!("write: {path}"),
             Self::Read { path }              => format!("read: {path}"),
-            Self::Search { query, .. }       => format!("search: {}", truncate(query, 40)),
+            Self::Search { query, .. }       => format!("search: {}", crate::truncate(query, 40)),
             ToolCall::NushellTool { namespace, tool, args } => {
                 // Include the primary target arg in the summary so loop detection
                 // can distinguish between calls to the same tool with different targets.
@@ -75,15 +75,11 @@ impl ToolCall {
                             .or_else(|| o.get("tool"))
                     })
                     .and_then(|v| v.as_str())
-                    .map(|s| format!(":{}", truncate(s, 40)))
+                    .map(|s| format!(":{}", crate::truncate(s, 40)))
                     .unwrap_or_default();
                 format!("{namespace}/{tool}{target}")
             }
             Self::Submit { .. }              => "submit".to_string(),
         }
     }
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
 }

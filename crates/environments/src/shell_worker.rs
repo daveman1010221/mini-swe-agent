@@ -6,6 +6,7 @@ use std::thread;
 
 use anyhow::{anyhow, Context, Result};
 use mswea_core::observation::Observation;
+use mswea_core::truncate;
 use tracing::{debug, error, info};
 
 use crate::session::NushellSession;
@@ -170,8 +171,4 @@ fn run_tool(session: &mut NushellSession, script_path: &std::path::Path, flags: 
             })
         }
     }
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max { s } else { &s[..max] }
 }

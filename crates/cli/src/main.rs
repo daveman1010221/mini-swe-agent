@@ -18,7 +18,7 @@ use mswea_core::{
     event::{Event, EventKind},
     message::Message,
     observation::Observation,
-    ToolCall,
+    ToolCall, truncate,
 };
 use ractor::{call_t, port::OutputPort};
 use tracing::{error, info, warn};
@@ -415,16 +415,4 @@ fn load_skills() -> String {
     }
 
     String::new()
-}
-
-fn truncate(s: &str, max: usize) -> &str {
-    if s.len() <= max {
-        s
-    } else {
-        let mut boundary = max;
-        while !s.is_char_boundary(boundary) {
-            boundary -= 1;
-        }
-        &s[..boundary]
-    }
 }
