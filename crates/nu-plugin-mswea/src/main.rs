@@ -39,7 +39,7 @@ fn main() {
             NodeServer::new(
                 0,
                 cluster_cookie,
-                "mswea-plugin".to_string(),
+                format!("mswea-plugin-{}", std::process::id()),
                 "localhost".to_string(),
                 None,
                 Some(NodeConnectionMode::Isolated),
@@ -54,8 +54,17 @@ fn main() {
             .await
             .expect("Failed to connect to mswea-core cluster node");
 
-        // Give the cluster handshake time to complete and actors to sync
-        sleep(Duration::from_millis(500)).await;
+        // Wait for cluster registry to sync — poll until task-actor is visible
+        // or timeout after 5 seconds
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            let task_actor: Option<ActorRef<TaskMsg>> =
+                ActorRef::where_is("task-actor".to_string());
+            if task_actor.is_some() || tokio::time::Instant::now() >= deadline {
+                break;
+            }
+            sleep(Duration::from_millis(100)).await;
+        }
 
         // Resolve remote ActorRefs by name from the cluster registry
         let task_actor: Option<ActorRef<TaskMsg>> =

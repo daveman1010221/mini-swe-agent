@@ -10,7 +10,7 @@ use nu_plugin::create_plugin_signature;
 use nu_plugin_engine::{add_plugin_to_working_set, PluginDeclaration};
 use nu_protocol::{
     engine::{EngineState, Stack, StateWorkingSet},
-    PipelineData, PluginIdentity, Span, Value,
+    PipelineData, PluginIdentity, Span, Value, RegisteredPlugin,
 };
 use tracing::{debug, instrument, warn};
 
@@ -212,10 +212,31 @@ impl NushellSession {
             .map_err(|e| anyhow!("Invalid plugin path {}: {e}", plugin_binary.display()))?;
 
         let engine_mut = Arc::make_mut(&mut self.engine);
+
+        // Disable GC in engine config so it survives config updates.
+        // The plugin must stay alive to maintain the cluster connection.
+        {
+            let mut config = engine_mut.get_config().as_ref().clone();
+            config.plugin_gc.plugins.insert(
+                "mswea".to_string(),
+                nu_protocol::PluginGcConfig {
+                    enabled: false,
+                    stop_after: 0,
+                },
+            );
+            engine_mut.set_config(config);
+        }
+
         let mut working_set = StateWorkingSet::new(engine_mut);
 
         let plugin = add_plugin_to_working_set(&mut working_set, &identity)
             .map_err(|e| anyhow!("Failed to register plugin: {e}"))?;
+
+        // Also set directly on the plugin instance for immediate effect
+        plugin.set_gc_config(&nu_protocol::PluginGcConfig {
+            enabled: false,
+            stop_after: 0,
+        });
 
         // Register each command signature from the plugin
         let mswea_plugin = nu_plugin_mswea::MsweaPlugin::new(None, None,

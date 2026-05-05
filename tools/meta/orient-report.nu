@@ -22,7 +22,7 @@ def main [
     let result = (mswea rpc record-orient {
         observed: $observed
         decision: $decision
-        blockers: (if ($blockers | str length) > 0 { $blockers } else { null })
+        blockers: (if ($blockers | str length) > 0 { $blockers } else { "" })
     })
 
     if not $result.ok {

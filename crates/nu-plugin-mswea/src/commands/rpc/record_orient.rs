@@ -76,7 +76,8 @@ The input record must contain:
 
         let blockers = report
             .get_data_by_key("blockers")
-            .and_then(|v| v.as_str().ok().map(|s| s.to_string()));
+            .and_then(|v| v.as_str().ok().map(|s| s.to_string()))
+            .filter(|s| !s.is_empty());
 
         let task_actor = plugin.task_actor.as_ref().ok_or_else(|| {
             LabeledError::new("Plugin not connected")
