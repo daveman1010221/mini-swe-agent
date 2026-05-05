@@ -98,7 +98,7 @@ pub fn resolve_config(args: &CliArgs) -> Result<RunConfig> {
 fn default_run_config() -> RunConfig {
     RunConfig {
         agent: AgentConfig {
-            step_limit: 100,
+            step_limit: 1000,
             cost_limit: 3.0,
             output_path: None,
             system_template: "templates/system.j2".into(),

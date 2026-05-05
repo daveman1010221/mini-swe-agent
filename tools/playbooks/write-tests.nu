@@ -10,16 +10,17 @@
 #   ACT:      exactly one approved tool call
 #
 # Steps:
-#   1. survey   — understand the crate before touching anything
-#   2. orient   — build the coverage plan, document decisions
-#   3. scaffold — create test infrastructure if needed
-#   4. write    — write tests against the coverage plan
-#   5. verify   — run tests, verify coverage plan fulfilled
-#   6. finalize — fmt, final compile check, advance task state
+#   1. survey      — understand the crate before touching anything
+#   2. orient      — build the coverage plan, document decisions
+#   3. plan-review — evaluate and iterate on the plan until it meets quality gates
+#   4. scaffold    — create test infrastructure if needed
+#   5. write       — write tests against the coverage plan
+#   6. verify      — run tests, verify coverage plan fulfilled
+#   7. finalize    — fmt, final compile check, advance task state
 
 {
   type: "write-tests",
-  version: "1.0",
+  version: "1.1",
   description: "Write test coverage for a Rust crate — actors, types, or both.",
   success_condition: "All planned tests pass. zero failures. coverage plan fulfilled. task advanced.",
   global_approved_tools: [
@@ -57,7 +58,8 @@
 
       forbidden_tools: [
         "create/*", "fmt/*", "lint/*",
-        "task/advance", "task/write-coverage-plan"
+        "task/advance", "task/write-coverage-plan",
+        "task/evaluate-coverage-plan"
       ],
 
       orient_questions: [
@@ -78,41 +80,89 @@
     {
       name: "orient",
       index: 1,
-      description: "Write the coverage plan. Every decision documented. This is the contract for task/advance.",
-      budget: 2,
+      description: "Write the initial coverage plan. Every decision documented. This is the starting contract — plan-review will challenge and improve it.",
+      budget: 3,
       on_budget_exhausted: "halt",
 
       approved_tools: [
-        "task/write-coverage-plan", "task/advance",
+        "task/write-coverage-plan",
+        "locate/files", "locate/symbols", "locate/derives", "locate/deps",
+        "extract/file", "extract/symbol", "extract/cargo-toml",
+        "task/advance",
         "task/state", "meta/loop-detect", "meta/trajectory-summary",
         "meta/orient-report", "playbook/current-step", "tools/check-approved"
       ],
 
       forbidden_tools: [
-        "locate/*", "extract/*", "create/*",
-        "compile/*", "test/*", "fmt/*", "lint/*",
-        "task/halt", "task/block"
+        "create/*", "compile/*", "test/*", "fmt/*", "lint/*",
+        "task/halt", "task/block",
+        "task/evaluate-coverage-plan"
       ],
 
       orient_questions: [
-        "What are all public interfaces that need tests?",
-        "For each interface — what are the failure modes?",
-        "For each interface — what are the boundary conditions?",
-        "Which types need serde roundtrip tests?",
-        "Which types need rkyv roundtrip tests?",
+        "What are ALL public types (structs and enums) in this crate?",
+        "Which public types have serde derives — each needs a roundtrip test",
+        "Which public types have rkyv derives — each needs a roundtrip test",
+        "Which enums have multiple variants — all variants must be covered",
+        "Which types have string or numeric fields — proptest candidates",
+        "Which types are error types — Display/Debug format tests needed",
         "Which actors need mailbox tests?",
         "Which actors need MockActor dependencies?",
-        "How many total tests are planned?"
+        "How many total tests are planned — must be >= number of public types with derives"
       ],
 
       verification_gate: "task/write-coverage-plan called. coverage_plan non-null in task state. planned_count > 0.",
 
-      notes: "The coverage plan is a contract. Every planned test must have a name, type, and rationale. Do not advance until written."
+      notes: "Write the most complete plan you can. plan-review will identify gaps — but start with a thorough attempt. Every planned test must have a name, type, and rationale."
+    },
+
+    {
+      name: "plan-review",
+      index: 2,
+      description: "Evaluate the coverage plan against the crate surface. Identify gaps. Revise until the plan meets quality gates. Do not advance until evaluate-coverage-plan returns approved:true.",
+      budget: 6,
+      on_budget_exhausted: "halt",
+
+      approved_tools: [
+        "task/evaluate-coverage-plan",
+        "task/write-coverage-plan",
+        "locate/files", "locate/symbols", "locate/derives", "locate/deps",
+        "locate/tests",
+        "extract/file", "extract/symbol", "extract/range", "extract/cargo-toml",
+        "task/advance",
+        "task/state", "meta/loop-detect", "meta/trajectory-summary",
+        "meta/orient-report", "playbook/current-step", "tools/check-approved"
+      ],
+
+      forbidden_tools: [
+        "create/*", "compile/*", "test/*", "fmt/*", "lint/*",
+        "task/halt", "task/block"
+      ],
+
+      orient_questions: [
+        "What did evaluate-coverage-plan report as gaps?",
+        "Does every public type with serde derives have a planned serde roundtrip test?",
+        "Does every public type with rkyv derives have a planned rkyv roundtrip test?",
+        "Does every enum have ALL variants covered — not just one?",
+        "Are proptest candidates identified and planned for types with string/numeric/Vec fields?",
+        "Is planned_count >= minimum_required from evaluate-coverage-plan?",
+        "Does evaluate-coverage-plan return approved:true?"
+      ],
+
+      verification_gate: "task/evaluate-coverage-plan returned approved:true. planned_count >= minimum_required. All gaps addressed.",
+
+      notes: [
+        "Call task/evaluate-coverage-plan first — read the gaps report carefully.",
+        "Revise the plan with task/write-coverage-plan to address each gap.",
+        "Re-evaluate after each revision.",
+        "Do NOT advance until approved:true.",
+        "If budget exhausted without approval — halt and surface gaps to human."
+      ]
     },
 
     {
       name: "scaffold",
-      index: 2,
+      index: 3,
       description: "Create test infrastructure — tests/ dir, Cargo.toml entries, empty test files. No test bodies yet.",
       budget: 3,
       on_budget_exhausted: "halt",
@@ -126,13 +176,14 @@
       ],
 
       forbidden_tools: [
-        "test/*", "fmt/*", "lint/*", "task/advance"
+        "test/*", "fmt/*", "lint/*", "task/advance",
+        "task/write-coverage-plan", "task/evaluate-coverage-plan"
       ],
 
       orient_questions: [
         "Does tests/ directory exist?",
         "Does Cargo.toml declare all required [[test]] entries?",
-        "Are all required dev-dependencies present?",
+        "Are all required dev-dependencies present (proptest, serde_json, rkyv)?",
         "Do the empty test files compile cleanly?"
       ],
 
@@ -143,9 +194,9 @@
 
     {
       name: "write",
-      index: 3,
-      description: "Write test bodies against the coverage plan. One test at a time. compile/check after each.",
-      budget: 5,
+      index: 4,
+      description: "Write test bodies against the coverage plan. One test at a time. compile/check after each. Every planned test must be written.",
+      budget: 10,
       on_budget_exhausted: "halt",
 
       approved_tools: [
@@ -158,17 +209,19 @@
 
       forbidden_tools: [
         "test/*", "create/*", "fmt/*", "lint/*",
-        "task/advance", "task/write-coverage-plan"
+        "task/advance", "task/write-coverage-plan",
+        "task/evaluate-coverage-plan"
       ],
 
       orient_questions: [
         "How many planned tests written so far? How many remain?",
         "Does the last written test compile cleanly?",
         "Am I appending to existing tests or rewriting? (must always append)",
-        "Has loop-detect flagged any repeated compile errors?"
+        "Has loop-detect flagged any repeated compile errors?",
+        "Are proptests using proptest! macro correctly?"
       ],
 
-      verification_gate: "compile/check passes. All coverage plan tests written. No assert!(true) as sole assertion.",
+      verification_gate: "compile/check passes. ALL coverage plan tests written by name. No assert!(true) as sole assertion.",
 
       notes: [
         "One test at a time. compile/check after each.",
@@ -176,14 +229,17 @@
         "Never assert!(true) or assert!(false) as the only assertion.",
         "Never std::env::set_var — use from_lookup pattern.",
         "Spawn mock actors with None name to avoid ActorAlreadyRegistered.",
-        "If loop-detect fires on compile errors — compile/fix-hint, then halt if still stuck."
+        "Proptests go in tests/props.rs using the proptest! macro.",
+        "Unit tests go in tests/unit.rs.",
+        "If loop-detect fires on compile errors — compile/fix-hint, then halt if still stuck.",
+        "The coverage plan is a CONTRACT — every named test must be written."
       ]
     },
 
     {
       name: "verify",
-      index: 4,
-      description: "Run the tests. Verify coverage plan fulfilled. Zero failures required to advance.",
+      index: 5,
+      description: "Run the tests. Verify coverage plan fulfilled by name. Zero failures required to advance.",
       budget: 3,
       on_budget_exhausted: "halt",
 
@@ -197,7 +253,8 @@
 
       forbidden_tools: [
         "create/*", "fmt/*",
-        "task/advance", "task/write-coverage-plan"
+        "task/advance", "task/write-coverage-plan",
+        "task/evaluate-coverage-plan"
       ],
 
       orient_questions: [
@@ -219,7 +276,7 @@
 
     {
       name: "finalize",
-      index: 5,
+      index: 6,
       description: "Format, final compile and test check, advance task state.",
       budget: 2,
       on_budget_exhausted: "halt",
@@ -235,6 +292,7 @@
 
       forbidden_tools: [
         "create/*", "task/write-coverage-plan",
+        "task/evaluate-coverage-plan",
         "task/halt", "task/block"
       ],
 
