@@ -11,6 +11,7 @@
 //!   5. Return response to caller
 
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use tracing::info;
@@ -34,6 +35,8 @@ use crate::{
     policy_messages::PolicyContextUpdate,
     event_bus::EventBus,
 };
+use mswea_core::toolbox::PlaybookRegistry;
+use tokio::sync::RwLock as AsyncRwLock;
 
 pub use mswea_core::task::TaskMsg;
 
@@ -46,6 +49,7 @@ pub struct TaskActorArgs {
     pub constraint_checker: ActorRef<ConstraintCheckerMsg>,
     pub orchestrator: ActorRef<OrchestratorMsg>,
     pub event_bus: EventBus,
+    pub playbook_registry: Arc<AsyncRwLock<PlaybookRegistry>>,
 }
 
 pub struct TaskActorState {
@@ -54,6 +58,7 @@ pub struct TaskActorState {
     pub constraint_checker: ActorRef<ConstraintCheckerMsg>,
     pub orchestrator: ActorRef<OrchestratorMsg>,
     pub event_bus: EventBus,
+    pub playbook_registry: Arc<AsyncRwLock<PlaybookRegistry>>,
 }
 
 // ── Actor impl ────────────────────────────────────────────────────────────────
@@ -79,6 +84,7 @@ impl Actor for TaskActor {
             constraint_checker: args.constraint_checker,
             orchestrator: args.orchestrator,
             event_bus: args.event_bus,
+            playbook_registry: args.playbook_registry,
         })
     }
 
@@ -329,21 +335,46 @@ async fn notify_step_change(
     task: &RuntimeTask,
     state: &TaskActorState,
 ) -> Result<(), ActorProcessingErr> {
-    // Build new PolicyContext from current task state
+    // Look up approved/forbidden tools from playbook
+    let (approved_tools, forbidden_tools, global_approved_tools) = {
+        let registry = state.playbook_registry.read().await;
+        if let Some(playbook) = registry.get(&task.op) {
+            if let Some(step) = playbook.step_by_name(&task.step) {
+                (
+                    step.approved_tools.clone(),
+                    step.forbidden_tools.clone(),
+                    playbook.global_approved_tools.clone(),
+                )
+            } else {
+                tracing::warn!(
+                    step = %task.step,
+                    op = %task.op,
+                    "notify_step_change: step not found in playbook"
+                );
+                (vec![], vec![], vec![])
+            }
+        } else {
+            tracing::warn!(
+                op = %task.op,
+                "notify_step_change: playbook not found for op"
+            );
+            (vec![], vec![], vec![])
+        }
+    };
+
     let ctx = PolicyContext {
-        step: 0, // agent step not known here — set per tool call in main.rs
+        step: 0,
         playbook_step: task.step.clone(),
         playbook_index: task.step_index,
-        approved_tools: vec![],   // ConstraintChecker gets these from playbook
-        forbidden_tools: vec![],
-        global_approved_tools: vec![],
+        approved_tools,
+        forbidden_tools,
+        global_approved_tools,
         last_tool_call: None,
         last_tool_step: None,
         last_compile_check: None,
         last_test_write: None,
     };
 
-    // 1. ConstraintCheckerActor — blocks until ack
     ractor::call!(
         state.constraint_checker,
         |reply| ConstraintCheckerMsg::UpdateContext(
@@ -353,7 +384,6 @@ async fn notify_step_change(
         format!("ConstraintChecker UpdateContext failed: {e}")
     ))?;
 
-    // 2. OrchestratorActor — blocks until prompt regenerated
     state.orchestrator
         .cast(OrchestratorMsg::PlaybookStepChanged {
             step: task.step.clone(),
@@ -392,20 +422,28 @@ async fn handle_advance_msg(
         };
     };
 
-    // Playbook steps — will come from PlaybookActor in future
-    let playbook_steps = ["survey", "orient", "scaffold", "write", "verify", "finalize"];
-    let next_index = task.step_index + 1;
-    let task_completed = next_index as usize >= playbook_steps.len();
+    // Look up steps from playbook registry
+    let op = task.op.clone();
+    let current_index = task.step_index;
 
-    let previous_step = task.step.clone();
-    let next_step = if task_completed {
-        None
-    } else {
-        Some(playbook_steps[next_index as usize].to_string())
+    let (next_step, task_completed) = {
+        let registry = state.playbook_registry.read().await;
+        if let Some(playbook) = registry.get(&op) {
+            let next_index = current_index + 1;
+            let completed = next_index as usize >= playbook.steps.len();
+            let next = playbook.step_by_index(next_index as usize)
+                .map(|s| s.name.clone());
+            (next, completed)
+        } else {
+            tracing::error!(op = %op, "handle_advance_msg: no playbook found for op");
+            (None, true)
+        }
     };
 
+    let next_index = current_index + 1;
+    let previous_step = task.step.clone();
+
     if task_completed {
-        // Move to completed list
         let completed = CompletedTask {
             crate_name: task.crate_name.clone(),
             op: task.op.clone(),
@@ -431,25 +469,22 @@ async fn handle_advance_msg(
 
     state.taskfile.last_updated = Some(now_utc());
 
-    // Notify downstream actors in order
     if let Some(ref task) = state.taskfile.current_task {
         if let Err(e) = notify_step_change(task, state).await {
             tracing::error!("notify_step_change failed: {e}");
         }
     }
 
-    // Write backing store
     if let Err(e) = state.taskfile.save(&state.taskfile_path) {
         tracing::error!("Failed to save taskfile: {e}");
     }
 
-    // Emit task lifecycle event
     if task_completed {
         state.event_bus.send(Event::new(
             "task-actor",
             EventKind::TaskCompleted {
-                crate_name: previous_step.clone(), // already captured before mutation
-                op: String::new(), // task moved to completed list
+                crate_name: previous_step.clone(),
+                op: String::new(),
                 verification: req.verification.clone(),
             },
         ));

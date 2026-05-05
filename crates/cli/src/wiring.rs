@@ -16,7 +16,7 @@ use environments::ShellWorker;
 use models::{LitellmClient, ModelActor};
 use mswea_core::{
     config::{CurrentTask, RunConfig},
-    toolbox::{ToolRegistry, ShellPolicy},
+    toolbox::{PlaybookRegistry, ToolRegistry, ShellPolicy},
 };
 use ractor::{Actor, ActorRef};
 use ractor_cluster::{NodeServer, node::NodeConnectionMode};
@@ -108,9 +108,10 @@ pub async fn boot_actor_system(
     };
 
     // ── Shared state ─────────────────────────────────────────────────────────
-    // One registry shared across all actors — ToolboxActor writes, policy
-    // actors and ToolRouterActor read.
+    // One registry shared across all actors — ToolboxActor writes, others read.
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
+    let playbook_registry = Arc::new(AsyncRwLock::new(PlaybookRegistry::default()));
+    let shell_policy = Arc::new(AsyncRwLock::new(ShellPolicy::default()));
 
     // ── ConstraintCheckerActor ────────────────────────────────────────────────
     let (constraint_checker_ref, _cc_handle) = Actor::spawn(
@@ -184,6 +185,7 @@ pub async fn boot_actor_system(
             constraint_checker: constraint_checker_ref.clone(),
             orchestrator: orch_ref.clone(),
             event_bus: Arc::clone(&event_bus),
+            playbook_registry: Arc::clone(&playbook_registry),
         },
     )
     .await
@@ -195,10 +197,6 @@ pub async fn boot_actor_system(
     ractor::pg::join("mswea-task-actors".to_string(), vec![task_actor_ref.get_cell()]);
 
     // ── ToolboxActor ─────────────────────────────────────────────────────────
-    let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
-
-    let shell_policy = Arc::new(AsyncRwLock::new(ShellPolicy::default()));
-
     let shell_for_toolbox = Arc::new(AsyncRwLock::new(
         ShellWorker::spawn(&config.shell.cwd, &shell_env).context("Spawning ShellWorker for ToolboxActor")?
     ));
@@ -207,12 +205,13 @@ pub async fn boot_actor_system(
         Some("toolbox".into()),
         ToolboxActor,
         ToolboxArgs {
-            event_bus:    Arc::clone(&event_bus),
-            orchestrator: orch_ref.clone(),
+            event_bus:         Arc::clone(&event_bus),
+            orchestrator:      orch_ref.clone(),
             mswea_root,
-            shell:        Arc::clone(&shell_for_toolbox),
-            tool_registry: Arc::clone(&tool_registry),
-            shell_policy: Arc::clone(&shell_policy),
+            shell:             Arc::clone(&shell_for_toolbox),
+            tool_registry:     Arc::clone(&tool_registry),
+            shell_policy:      Arc::clone(&shell_policy),
+            playbook_registry: Arc::clone(&playbook_registry),
         },
     )
     .await

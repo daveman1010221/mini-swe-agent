@@ -26,10 +26,11 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use tokio::sync::RwLock as AsyncRwLock;
+use tokio::sync::RwLock;
 
 use ractor::{Actor, ActorProcessingErr, ActorRef};
 use ractor_cluster::RactorMessage;
-use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use mswea_core::{
@@ -71,6 +72,7 @@ pub struct ToolboxArgs {
     pub shell: Arc<RwLock<environments::ShellWorker>>,
     pub tool_registry: Arc<RwLock<ToolRegistry>>,
     pub shell_policy: Arc<RwLock<ShellPolicy>>,
+    pub playbook_registry: Arc<AsyncRwLock<PlaybookRegistry>>,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -79,13 +81,14 @@ pub struct ToolboxState {
     event_bus: EventBus,
     orchestrator: ActorRef<OrchestratorMsg>,
     mswea_root: PathBuf,
-    shell: Arc<RwLock<environments::ShellWorker>>,
+    shell: Arc<AsyncRwLock<environments::ShellWorker>>,
     tool_registry: ToolRegistry,
-    shared_tool_registry: Arc<RwLock<ToolRegistry>>,
+    shared_tool_registry: Arc<AsyncRwLock<ToolRegistry>>,
     playbook_registry: PlaybookRegistry,
+    shared_playbook_registry: Arc<AsyncRwLock<PlaybookRegistry>>,
     skills: String,
     shell_policy: ShellPolicy,
-    shared_shell_policy: Arc<RwLock<ShellPolicy>>,
+    shared_shell_policy: Arc<AsyncRwLock<ShellPolicy>>,
 }
 // ── Actor ─────────────────────────────────────────────────────────────────────
 
@@ -102,29 +105,26 @@ impl Actor for ToolboxActor {
         args: Self::Arguments,
     ) -> Result<Self::State, ActorProcessingErr> {
         info!("ToolboxActor starting");
-
         let tools_dir    = args.mswea_root.join("tools");
         let skills_dir   = args.mswea_root.join("skills");
         let playbook_dir = args.mswea_root.join("tools").join("playbooks");
-
         let tool_registry     = scan_tools(&tools_dir);
         let playbook_registry = scan_playbooks(&playbook_dir);
         let skills            = load_skills(&skills_dir);
         let shell_policy      = build_shell_policy();
 
-        *args.shell_policy.write().await = shell_policy.clone();
-
-        // Write into the shared Arc so ToolRouterActor can see the registry
-        *args.tool_registry.write().await = tool_registry.clone();
+        // Write into shared Arcs so other actors can read immediately
+        *args.tool_registry.write().await    = tool_registry.clone();
+        *args.playbook_registry.write().await = playbook_registry.clone();
+        *args.shell_policy.write().await     = shell_policy.clone();
 
         info!(
-            tools     = tool_registry.count(),
-            playbooks = playbook_registry.count(),
+            tools        = tool_registry.count(),
+            playbooks    = playbook_registry.count(),
             skills_bytes = skills.len(),
             "ToolboxActor: initial scan complete"
         );
 
-        // Push initial state to OrchestratorActor
         let update = ToolboxUpdate {
             tool_registry:     tool_registry.clone(),
             playbook_registry: playbook_registry.clone(),
@@ -138,21 +138,23 @@ impl Actor for ToolboxActor {
                 .flat_map(|p| p.global_approved_tools.clone())
                 .collect(),
         };
+
         args.orchestrator
             .cast(OrchestratorMsg::UpdateToolbox(update))
             .map_err(|e| ActorProcessingErr::from(format!("Failed to send toolbox update: {e}")))?;
 
         Ok(ToolboxState {
-            event_bus: args.event_bus,
-            orchestrator: args.orchestrator,
-            mswea_root: args.mswea_root,
-            shell: args.shell,
+            event_bus:              args.event_bus,
+            orchestrator:           args.orchestrator,
+            mswea_root:             args.mswea_root,
+            shell:                  args.shell,
             tool_registry,
-            shared_tool_registry: args.tool_registry,
+            shared_tool_registry:   args.tool_registry,
             playbook_registry,
+            shared_playbook_registry: args.playbook_registry,
             skills,
             shell_policy,
-            shared_shell_policy: args.shell_policy,
+            shared_shell_policy:    args.shell_policy,
         })
     }
 
