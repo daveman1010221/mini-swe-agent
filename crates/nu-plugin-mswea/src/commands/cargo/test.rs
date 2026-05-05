@@ -98,9 +98,18 @@ impl SimplePluginCommand for MsweaCargoTest {
             .copied()
             .unwrap_or("");
 
-        let passed = extract_count(result_line, "passed");
-        let failed = extract_count(result_line, "failed");
-        let ignored = extract_count(result_line, "ignored");
+        let passed: u32 = lines.iter()
+            .filter(|l| l.contains("test result:"))
+            .map(|l| extract_count(l, "passed"))
+            .sum();
+        let failed: u32 = lines.iter()
+            .filter(|l| l.contains("test result:"))
+            .map(|l| extract_count(l, "failed"))
+            .sum();
+        let ignored: u32 = lines.iter()
+            .filter(|l| l.contains("test result:"))
+            .map(|l| extract_count(l, "ignored"))
+            .sum();
         let total = passed + failed + ignored;
         let success = failed == 0 && exit_code == 0;
 

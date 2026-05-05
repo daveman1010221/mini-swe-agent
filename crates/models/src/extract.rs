@@ -29,12 +29,11 @@ pub fn extract_tool_call(text: &str) -> Result<ToolCall, ExtractionError> {
         return Err(ExtractionError::NoJson);
     }
 
-    // Try from the end — the action comes after the reasoning.
     let mut last_error = String::new();
     for candidate in candidates.iter().rev() {
-        // Normalize submit variants: models sometimes use "result" or "answer"
-        // instead of the required "output" field.
         let normalized = normalize_submit(candidate);
+        let normalized = normalize_search(&normalized);
+        let normalized = normalize_read(&normalized);
         match serde_json::from_str::<ToolCall>(&normalized) {
             Ok(call) => return Ok(call),
             Err(e) => last_error = e.to_string(),
@@ -42,6 +41,58 @@ pub fn extract_tool_call(text: &str) -> Result<ToolCall, ExtractionError> {
     }
 
     Err(ExtractionError::ParseFailed(last_error))
+}
+
+/// Normalize misrouted search calls.
+/// Models occasionally emit {"type":"nushell_tool","namespace":"search",...}
+/// instead of the correct {"type":"search",...}.
+fn normalize_search(json: &str) -> String {
+    if !json.contains(r#""search""#) {
+        return json.to_string();
+    }
+    match serde_json::from_str::<serde_json::Value>(json) {
+        Ok(mut v) => {
+            if let Some(obj) = v.as_object_mut() {
+                let is_nushell_tool = obj.get("type")
+                    .and_then(|t| t.as_str()) == Some("nushell_tool");
+                let is_search_ns = obj.get("namespace")
+                    .and_then(|t| t.as_str()) == Some("search");
+                if is_nushell_tool && is_search_ns {
+                    obj.insert("type".into(), serde_json::json!("search"));
+                    obj.remove("namespace");
+                    obj.remove("tool");
+                }
+            }
+            v.to_string()
+        }
+        Err(_) => json.to_string(),
+    }
+}
+
+/// Normalize misrouted read calls.
+/// Models occasionally emit {"type":"nushell_tool","namespace":"read","path":"..."}
+/// instead of the correct {"type":"read","path":"..."}
+fn normalize_read(json: &str) -> String {
+    if !json.contains(r#""read""#) {
+        return json.to_string();
+    }
+    match serde_json::from_str::<serde_json::Value>(json) {
+        Ok(mut v) => {
+            if let Some(obj) = v.as_object_mut() {
+                let is_nushell_tool = obj.get("type")
+                    .and_then(|t| t.as_str()) == Some("nushell_tool");
+                let is_read_ns = obj.get("namespace")
+                    .and_then(|t| t.as_str()) == Some("read");
+                if is_nushell_tool && is_read_ns {
+                    obj.insert("type".into(), serde_json::json!("read"));
+                    obj.remove("namespace");
+                    obj.remove("tool");
+                }
+            }
+            v.to_string()
+        }
+        Err(_) => json.to_string(),
+    }
 }
 
 /// Normalize submit tool calls that use non-standard field names.
