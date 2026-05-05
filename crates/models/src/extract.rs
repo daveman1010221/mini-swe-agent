@@ -28,65 +28,40 @@ pub fn extract_tool_call(text: &str) -> Result<ToolCall, ExtractionError> {
     if candidates.is_empty() {
         return Err(ExtractionError::NoJson);
     }
-
     let mut last_error = String::new();
     for candidate in candidates.iter().rev() {
         let normalized = normalize_submit(candidate);
-        let normalized = normalize_search(&normalized);
-        let normalized = normalize_read(&normalized);
+        let normalized = normalize_builtin_misrouting(&normalized);
         match serde_json::from_str::<ToolCall>(&normalized) {
             Ok(call) => return Ok(call),
             Err(e) => last_error = e.to_string(),
         }
     }
-
     Err(ExtractionError::ParseFailed(last_error))
 }
 
-/// Normalize misrouted search calls.
-/// Models occasionally emit {"type":"nushell_tool","namespace":"search",...}
-/// instead of the correct {"type":"search",...}.
-fn normalize_search(json: &str) -> String {
-    if !json.contains(r#""search""#) {
-        return json.to_string();
-    }
+/// Normalize misrouted builtin calls.
+/// Models emit {"type":"nushell_tool","namespace":"read|write|edit|search|shell",...}
+/// instead of the correct {"type":"read|write|edit|search|shell",...}.
+fn normalize_builtin_misrouting(json: &str) -> String {
+    const BUILTIN_NAMESPACES: &[&str] = &["read", "write", "edit", "search", "shell"];
+    
     match serde_json::from_str::<serde_json::Value>(json) {
         Ok(mut v) => {
             if let Some(obj) = v.as_object_mut() {
                 let is_nushell_tool = obj.get("type")
                     .and_then(|t| t.as_str()) == Some("nushell_tool");
-                let is_search_ns = obj.get("namespace")
-                    .and_then(|t| t.as_str()) == Some("search");
-                if is_nushell_tool && is_search_ns {
-                    obj.insert("type".into(), serde_json::json!("search"));
-                    obj.remove("namespace");
-                    obj.remove("tool");
-                }
-            }
-            v.to_string()
-        }
-        Err(_) => json.to_string(),
-    }
-}
-
-/// Normalize misrouted read calls.
-/// Models occasionally emit {"type":"nushell_tool","namespace":"read","path":"..."}
-/// instead of the correct {"type":"read","path":"..."}
-fn normalize_read(json: &str) -> String {
-    if !json.contains(r#""read""#) {
-        return json.to_string();
-    }
-    match serde_json::from_str::<serde_json::Value>(json) {
-        Ok(mut v) => {
-            if let Some(obj) = v.as_object_mut() {
-                let is_nushell_tool = obj.get("type")
-                    .and_then(|t| t.as_str()) == Some("nushell_tool");
-                let is_read_ns = obj.get("namespace")
-                    .and_then(|t| t.as_str()) == Some("read");
-                if is_nushell_tool && is_read_ns {
-                    obj.insert("type".into(), serde_json::json!("read"));
-                    obj.remove("namespace");
-                    obj.remove("tool");
+                if is_nushell_tool {
+                    if let Some(ns) = obj.get("namespace")
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string())
+                    {
+                        if BUILTIN_NAMESPACES.contains(&ns.as_str()) {
+                            obj.insert("type".into(), serde_json::json!(ns));
+                            obj.remove("namespace");
+                            obj.remove("tool");
+                        }
+                    }
                 }
             }
             v.to_string()
