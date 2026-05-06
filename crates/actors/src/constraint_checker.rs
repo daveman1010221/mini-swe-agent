@@ -151,6 +151,16 @@ impl Actor for ConstraintCheckerActor {
                     );
                 }
 
+                if let Some(true) = completed.plan_review_approved {
+                    state.context.plan_review_approved = true;
+                    tracing::info!("ConstraintCheckerActor: plan review approved");
+                }
+
+                // Reset when stepping out of plan-review
+                if state.context.playbook_step != "plan-review" {
+                    state.context.plan_review_approved = false;
+                }
+
                 // Update sliding window for future sequence detection
                 push_window(&mut state.call_window, completed.call_summary.clone());
 
@@ -232,6 +242,7 @@ async fn check(
     verdicts.push(check_forbidden_tools(call, ctx));
     verdicts.push(check_one_test_per_write(call, ctx));
     verdicts.push(check_compile_after_test_write(call, ctx));
+    verdicts.push(check_plan_review_gate(call, ctx));
 
     // Reduce verdicts
     let mut rejections: Vec<FeedbackNote> = Vec::new();
@@ -523,5 +534,39 @@ fn check_compile_after_test_write(call: &ToolCall, ctx: &PolicyContext) -> Polic
         }
     } else {
         PolicyVerdict::Approved
+    }
+}
+
+fn check_plan_review_gate(call: &ToolCall, ctx: &PolicyContext) -> PolicyVerdict {
+    // Only applies when advancing from plan-review step
+    if ctx.playbook_step != "plan-review" {
+        return PolicyVerdict::Approved;
+    }
+
+    // Only blocks task/advance
+    let ToolCall::NushellTool { namespace, tool, .. } = call else {
+        return PolicyVerdict::Approved;
+    };
+    if namespace != "task" || tool != "advance" {
+        return PolicyVerdict::Approved;
+    }
+
+    if ctx.plan_review_approved {
+        PolicyVerdict::Approved
+    } else {
+        PolicyVerdict::Rejected {
+            reason: "PLAN REVIEW GATE: task/advance is blocked in 'plan-review' step until \
+                     task/evaluate-coverage-plan returns approved:true. \
+                     Call task/evaluate-coverage-plan first. If gaps exist, revise the \
+                     coverage plan with task/write-coverage-plan and evaluate again."
+                .to_string(),
+            feedback: vec![FeedbackNote::required(
+                "PlanReviewGate",
+                "Call task/evaluate-coverage-plan. If approved:false, address the gaps \
+                 and call task/write-coverage-plan to revise, then evaluate again. \
+                 Only advance when approved:true is returned."
+                    .to_string(),
+            )],
+        }
     }
 }

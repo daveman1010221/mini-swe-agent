@@ -70,6 +70,9 @@ pub struct ToolCallCompleted {
     pub path: Option<String>,
     pub was_compile_check: bool,
     pub compile_clean: Option<bool>,
+
+    /// True if this was task/evaluate-coverage-plan and it returned approved:true
+    pub plan_review_approved: Option<bool>,
 }
 
 /// Sent after the pipeline blocks a tool call.
@@ -184,7 +187,12 @@ pub struct PolicyContext {
     pub last_compile_check: Option<LastCompileCheck>,
     /// Summary of the last test file write, if any.
     pub last_test_write: Option<LastTestWrite>,
+
     pub global_approved_tools: Vec<String>,
+
+    /// Set to true when task/evaluate-coverage-plan returns approved:true.
+    /// Blocks task/advance in plan-review step until this is set.
+    pub plan_review_approved: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,6 +221,7 @@ impl PolicyContext {
             last_compile_check: None,
             last_test_write: None,
             global_approved_tools: vec![],
+            plan_review_approved: false,
         }
     }
 }

@@ -337,6 +337,19 @@ async fn agent_loop(
             None
         };
 
+        let plan_review_approved = if tool_call.summary().contains("evaluate-coverage-plan") {
+            // Parse approved:true from the observation JSON
+            if let mswea_core::observation::Observation::Structured { ref output, .. } = observation {
+                output.get("data")
+                    .and_then(|d| d.get("approved"))
+                    .and_then(|a| a.as_bool())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         let _ = system.constraint_checker.cast(
             ConstraintCheckerMsg::ToolCallCompleted(ToolCallCompleted {
                 call_summary: tool_call.summary(),
@@ -344,6 +357,7 @@ async fn agent_loop(
                 path: write_path,
                 was_compile_check,
                 compile_clean,
+                plan_review_approved,
             })
         );
 
