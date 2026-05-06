@@ -152,22 +152,22 @@ def main [
 
     # ── Compute gaps ──────────────────────────────────────────────────────────
 
-    mut gaps = []
+    let mut gaps = []
 
     if $serde_files > 0 and not $has_serde_tests {
-        $gaps = ($gaps | append $"($serde_files) source files have serde derives but no serde roundtrip tests are planned. Add tests named like 'serde_roundtrip_<type>' for each type.")
+        gaps = ($gaps | append $"($serde_files) source files have serde derives but no serde roundtrip tests are planned. Add tests named like 'serde_roundtrip_<type>' for each type.")
     }
 
     if $rkyv_files > 0 and not $has_rkyv_tests {
-        $gaps = ($gaps | append $"($rkyv_files) source files have rkyv Archive derives but no rkyv roundtrip tests are planned. Add tests named like 'rkyv_roundtrip_<type>' for each type.")
+        gaps = ($gaps | append $"($rkyv_files) source files have rkyv Archive derives but no rkyv roundtrip tests are planned. Add tests named like 'rkyv_roundtrip_<type>' for each type.")
     }
 
     if $proptest_files > 0 and not $has_proptests {
-        $gaps = ($gaps | append $"($proptest_files) source files have proptest-worthy fields (String, Vec, numeric) but no proptests are planned. Add at least one proptest using the proptest! macro.")
+        gaps = ($gaps | append $"($proptest_files) source files have proptest-worthy fields (String, Vec, numeric) but no proptests are planned. Add at least one proptest using the proptest! macro.")
     }
 
     if $error_files > 0 and not $has_error_tests {
-        $gaps = ($gaps | append $"($error_files) source files have error types (thiserror) but no Display or Debug format tests are planned. Add tests that verify error messages.")
+        gaps = ($gaps | append $"($error_files) source files have error types (thiserror) but no Display or Debug format tests are planned. Add tests that verify error messages.")
     }
 
     let minimum_required = (
@@ -175,7 +175,7 @@ def main [
     )
 
     if $planned_count < $minimum_required {
-        $gaps = ($gaps | append $"planned_count ($planned_count) is less than minimum_required ($minimum_required). Need at least one test per public type with derives.")
+        gaps = ($gaps | append $"planned_count ($planned_count) is less than minimum_required ($minimum_required). Need at least one test per public type with derives.")
     }
 
     # ── Quality score ─────────────────────────────────────────────────────────

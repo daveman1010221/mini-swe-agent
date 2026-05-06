@@ -35,6 +35,8 @@ pub struct AgentConfig {
     /// When set, current_task drives the instance prompt and
     /// rules/tools/playbook are injected into the system prompt.
     pub task_file: Option<PathBuf>,
+    /// Inject step context banner into every observation response.
+    pub step_banner: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

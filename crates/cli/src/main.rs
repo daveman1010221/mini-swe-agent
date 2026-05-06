@@ -338,11 +338,11 @@ async fn agent_loop(
         };
 
         let plan_review_approved = if tool_call.summary().contains("evaluate-coverage-plan") {
-            // Parse approved:true from the observation JSON
-            if let mswea_core::observation::Observation::Structured { ref output, .. } = observation {
-                output.get("data")
-                    .and_then(|d| d.get("approved"))
-                    .and_then(|a| a.as_bool())
+            if let mswea_core::observation::Observation::Structured { ref value, .. } = observation {
+                // Navigate value.data.approved
+                value.get_data_by_key("data")
+                    .and_then(|d| d.get_data_by_key("approved"))
+                    .and_then(|a| a.as_bool().ok())
             } else {
                 None
             }
@@ -368,7 +368,13 @@ async fn agent_loop(
             duration_ms: 0,
         });
 
-        messages.push(Message::user(format!("Tool result:\n{obs_json}")));
+        let obs_text = if system.step_banner {
+            let banner = system.step_banner_text.read().unwrap();
+            format!("Tool result:\n{obs_json}{}", *banner)
+        } else {
+            format!("Tool result:\n{obs_json}")
+        };
+        messages.push(Message::user(obs_text));
     }
 }
 

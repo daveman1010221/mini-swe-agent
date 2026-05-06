@@ -373,6 +373,7 @@ async fn notify_step_change(
         last_tool_step: None,
         last_compile_check: None,
         last_test_write: None,
+        plan_review_approved: false,
     };
 
     ractor::call!(

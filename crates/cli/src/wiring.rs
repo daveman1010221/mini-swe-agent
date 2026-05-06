@@ -47,6 +47,8 @@ pub struct ActorSystem {
     pub event_logger: Option<ActorRef<actors::EventLoggerMsg>>,
     pub toolbox: ActorRef<ToolboxMsg>,
     pub cluster_node: ActorRef<ractor_cluster::NodeServerMessage>,
+    pub step_banner_text: Arc<RwLock<String>>,
+    pub step_banner: bool,
 }
 
 pub async fn boot_actor_system(
@@ -112,6 +114,7 @@ pub async fn boot_actor_system(
     let tool_registry = Arc::new(AsyncRwLock::new(ToolRegistry::default()));
     let playbook_registry = Arc::new(AsyncRwLock::new(PlaybookRegistry::default()));
     let shell_policy = Arc::new(AsyncRwLock::new(ShellPolicy::default()));
+    let step_banner_text = Arc::new(RwLock::new(String::new()));
 
     // ── ConstraintCheckerActor ────────────────────────────────────────────────
     let (constraint_checker_ref, _cc_handle) = Actor::spawn(
@@ -151,6 +154,7 @@ pub async fn boot_actor_system(
         OrchestratorArgs {
             event_bus:          Arc::clone(&event_bus),
             system_prompt:      Arc::clone(&system_prompt),
+            step_banner_text:   Arc::clone(&step_banner_text),
             cwd:                config.shell.cwd.clone(),
             output_path:        format!("{output_path}.jsonl"),
             rules_section,
@@ -278,6 +282,8 @@ pub async fn boot_actor_system(
         event_logger,
         toolbox: toolbox_ref,
         cluster_node,
+        step_banner_text,
+        step_banner: config.agent.step_banner,
     })
 }
 

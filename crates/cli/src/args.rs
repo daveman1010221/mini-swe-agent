@@ -79,6 +79,16 @@ pub struct CliArgs {
     #[arg(long, value_name = "PATH", help = "Output path for trajectory archive")]
     pub output: Option<PathBuf>,
 
+    /// Inject a step context banner into every observation response.
+    /// Helps models that lose track of their current playbook step.
+    /// Can also be enabled via MSWEA_STEP_BANNER=1.
+    #[arg(
+        long,
+        env = "MSWEA_STEP_BANNER",
+        help = "Inject step context banner into every observation (default: off)"
+    )]
+    pub step_banner: bool,
+
     // ── Shell overrides ──────────────────────────────────────────────────────
 
     /// Working directory for shell commands.

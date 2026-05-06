@@ -53,6 +53,7 @@ pub struct OrchestratorArgs {
     pub rules_section: String,
     pub skills_section: String,
     pub constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
+    pub step_banner_text: Arc<RwLock<String>>,
 }
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -70,6 +71,11 @@ pub struct OrchestratorState {
     env: Environment<'static>,
     shell_policy_section: String,
     constraint_checker: Option<ActorRef<ConstraintCheckerMsg>>,
+    step_banner_text: Arc<RwLock<String>>,
+    // For banner rendering
+    total_steps: usize,
+    current_approved_tools: Vec<String>,
+    current_global_tools: Vec<String>,
 }
 
 // ── Actor ─────────────────────────────────────────────────────────────────────
@@ -106,6 +112,10 @@ impl Actor for OrchestratorActor {
             ooda_section: String::new(),
             shell_policy_section: String::new(),
             constraint_checker: args.constraint_checker,
+            step_banner_text: args.step_banner_text,
+            total_steps: 0,
+            current_approved_tools: vec![],
+            current_global_tools: vec![],
             env,
         })
     }
@@ -121,13 +131,19 @@ impl Actor for OrchestratorActor {
                 tracing::info!(
                     step = %step,
                     step_index,
-                    "OrchestratorActor: playbook step changed"
-                );
-                // Update the ooda section to reflect the new step
-                // For now just regenerate the prompt — the toolbox section
-                // already has the playbook info, we just need the prompt
-                // to reflect the current step
+                    "OrchestratorActor: playbook step changed");
+
                 regenerate_prompt(state);
+
+                if let Ok(mut banner) = state.step_banner_text.write() {
+                    *banner = render_step_banner(
+                        &step,
+                        step_index as usize,
+                        state.total_steps,
+                        &state.current_approved_tools,
+                        &state.current_global_tools,
+                    );
+                }
             }
 
             OrchestratorMsg::RegisterCapability(cap) => {
@@ -186,6 +202,7 @@ impl Actor for OrchestratorActor {
                             last_compile_check: None,
                             last_test_write: None,
                             global_approved_tools: update.global_approved_tools.clone(),
+                            plan_review_approved: false,
                         };
                         let _ = ractor::call!(
                             cc,
@@ -195,6 +212,15 @@ impl Actor for OrchestratorActor {
                 }
 
                 regenerate_prompt(state);
+                state.total_steps = update.playbook_registry
+                    .playbooks.values()
+                    .next()
+                    .map(|p| p.steps.len())
+                    .unwrap_or(0);
+                if let Some(ref step) = update.current_step {
+                    state.current_approved_tools = step.approved_tools.clone();
+                    state.current_global_tools = update.global_approved_tools.clone();
+                }
             }
         }
         Ok(())
@@ -202,6 +228,25 @@ impl Actor for OrchestratorActor {
 }
 
 // ── Prompt regeneration ───────────────────────────────────────────────────────
+fn render_step_banner(
+    step_name: &str,
+    step_index: usize,
+    total_steps: usize,
+    approved_tools: &[String],
+    global_approved_tools: &[String],
+) -> String {
+    format!(
+        "\n\n─── Current Step ────────────────────────────────────────\n\
+         Step: {step_name} ({}/{total_steps})\n\
+         Approved this step: {}\n\
+         Always available: {}\n\
+         Tip: call meta/help --tool <name> for full usage on any tool.\n\
+         ─────────────────────────────────────────────────────────",
+        step_index + 1,
+        approved_tools.join(", "),
+        global_approved_tools.join(", "),
+    )
+}
 
 fn regenerate_prompt(state: &mut OrchestratorState) {
     let prompt = render_system_prompt(
